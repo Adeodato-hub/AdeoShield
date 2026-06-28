@@ -13,31 +13,19 @@ import java.util.concurrent.TimeUnit
 /**
  * Cliente DNS-over-HTTPS (RFC 8484).
  *
- * Por qué NO necesita VpnService.protect():
- * ──────────────────────────────────────────
- * Usamos rutas VPN selectivas: solo enrutamos hacia el TUN las IPs de los
- * servidores DNS sin filtro (8.8.8.8, 1.1.1.1, …).
- * Las IPs de AdGuard Family (94.140.14.15 / 94.140.15.16) NO están en esas
- * rutas, por lo que las conexiones TCP de OkHttp hacia ellas salen directamente
- * por la red física, sin pasar por el TUN. No hay bucle circular.
- *
- * Por qué SÍ usa HardcodedDns:
- * ──────────────────────────────
- * La resolución del hostname "family.adguard-dns.com" usaría el resolver del
- * sistema, que en este contexto apunta a 10.0.0.1 (nuestra VPN). Eso sí
- * crearía un bucle. HardcodedDns evita cualquier consulta DNS devolviendo
- * las IPs conocidas directamente, sin tocar el resolver del sistema.
- *
  * Orden de providers:
  *   1. AdGuard Family DNS  (94.140.14.15 / 94.140.15.16)
  *   2. CleanBrowsing Family (185.228.168.168 / 185.228.169.168)
  *   3. Cloudflare for Families (1.1.1.3 / 1.0.0.3)
+ *
+ * HardcodedDns impide que OkHttp use el resolver del sistema (que apuntaría
+ * a nuestra propia VPN) para resolver los hostnames de los endpoints DoH.
  */
 class DoHClient(@Suppress("UNUSED_PARAMETER") vpnService: VpnService) {
 
     companion object {
-        private const val TAG      = "DoHClient"
-        private const val TIMEOUT  = 5L
+        const val TAG = "DoHClient"
+        private const val TIMEOUT  = 8L          // segundos por intento
         private val DNS_MEDIA_TYPE = "application/dns-message".toMediaType()
 
         private data class Provider(val url: String, val host: String, val ips: List<String>)
@@ -66,18 +54,25 @@ class DoHClient(@Suppress("UNUSED_PARAMETER") vpnService: VpnService) {
         .connectTimeout(TIMEOUT, TimeUnit.SECONDS)
         .readTimeout(TIMEOUT, TimeUnit.SECONDS)
         .writeTimeout(TIMEOUT, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(false)
         .build()
 
     /**
-     * Envía [dnsWirePayload] (consulta DNS en wire-format) al primer provider
-     * disponible y devuelve la respuesta en wire-format, o null si todos fallan.
+     * Envía [dnsWirePayload] al primer provider disponible.
+     * Devuelve la respuesta en wire-format, o null si todos fallan.
      */
     fun query(dnsWirePayload: ByteArray): ByteArray? {
-        for (provider in PROVIDERS) {
+        Log.d(TAG, "query() payload=${dnsWirePayload.size}B — probando ${PROVIDERS.size} providers")
+        for ((index, provider) in PROVIDERS.withIndex()) {
+            Log.d(TAG, "  Provider ${index + 1}/${PROVIDERS.size}: ${provider.host}")
             val result = doQuery(provider, dnsWirePayload)
-            if (result != null) return result
+            if (result != null) {
+                Log.d(TAG, "  ✓ Éxito con ${provider.host}: respuesta ${result.size}B")
+                return result
+            }
+            Log.w(TAG, "  ✗ ${provider.host} falló, probando siguiente…")
         }
-        Log.e(TAG, "Todos los providers DoH fallaron.")
+        Log.e(TAG, "TODOS los providers DoH fallaron.")
         return null
     }
 
@@ -87,33 +82,69 @@ class DoHClient(@Suppress("UNUSED_PARAMETER") vpnService: VpnService) {
             .post(payload.toRequestBody(DNS_MEDIA_TYPE))
             .header("Accept", "application/dns-message")
             .build()
+
         return try {
+            Log.d(TAG, "    Abriendo conexión a ${provider.url}…")
+            val t0 = System.currentTimeMillis()
+
             client.newCall(request).execute().use { resp ->
-                if (resp.isSuccessful) {
-                    resp.body?.bytes()
-                } else {
-                    Log.w(TAG, "${provider.host} respondió HTTP ${resp.code}")
-                    null
+                val ms = System.currentTimeMillis() - t0
+                Log.d(TAG, "    HTTP ${resp.code} en ${ms}ms, Content-Type=${resp.header("Content-Type")}")
+
+                if (!resp.isSuccessful) {
+                    Log.w(TAG, "    HTTP ${resp.code} — no exitoso")
+                    return null
                 }
+                val bytes = resp.body?.bytes()
+                if (bytes == null || bytes.isEmpty()) {
+                    Log.w(TAG, "    Body nulo o vacío")
+                    return null
+                }
+                Log.d(TAG, "    Body: ${bytes.size}B ✓")
+                bytes
             }
+        } catch (e: java.net.UnknownHostException) {
+            Log.e(TAG, "    UnknownHostException: ${e.message} " +
+                       "— ¿el HardcodedDns está devolviendo las IPs correctas?")
+            null
+        } catch (e: java.net.ConnectException) {
+            Log.e(TAG, "    ConnectException: ${e.message} " +
+                       "— ¿la IP de AdGuard es alcanzable desde la red del J6?")
+            null
+        } catch (e: java.net.SocketTimeoutException) {
+            Log.e(TAG, "    SocketTimeoutException (${TIMEOUT}s agotado): ${e.message}")
+            null
+        } catch (e: javax.net.ssl.SSLException) {
+            Log.e(TAG, "    SSLException: ${e.message}")
+            null
         } catch (e: Exception) {
-            Log.w(TAG, "${provider.host} no disponible: ${e.message}")
+            Log.e(TAG, "    Excepción inesperada (${e.javaClass.simpleName}): ${e.message}", e)
             null
         }
     }
 
-    /**
-     * Resolver DNS que devuelve IPs hardcodeadas para los endpoints DoH,
-     * evitando cualquier consulta al resolver del sistema (y por tanto al TUN).
-     * Para cualquier otro hostname delega en el DNS del sistema.
-     */
+    // Resuelve los hostnames de los endpoints directamente con IPs hardcodeadas;
+    // así OkHttp no usa el DNS del sistema (que apuntaría a nuestra propia VPN).
     private class HardcodedDns : Dns {
         private val table: Map<String, List<InetAddress>> = buildMap {
             for (p in PROVIDERS) {
-                put(p.host, p.ips.map { ip -> InetAddress.getByName(ip) })
+                val addrs = p.ips.map { ip ->
+                    InetAddress.getByName(ip).also {
+                        Log.d(TAG, "HardcodedDns: ${p.host} → $ip")
+                    }
+                }
+                put(p.host, addrs)
             }
         }
-        override fun lookup(hostname: String): List<InetAddress> =
-            table[hostname] ?: Dns.SYSTEM.lookup(hostname)
+        override fun lookup(hostname: String): List<InetAddress> {
+            val known = table[hostname]
+            return if (known != null) {
+                Log.d(TAG, "HardcodedDns lookup('$hostname') → ${known.map { it.hostAddress }}")
+                known
+            } else {
+                Log.w(TAG, "HardcodedDns lookup('$hostname') → delegando al DNS del sistema ⚠️")
+                Dns.SYSTEM.lookup(hostname)
+            }
+        }
     }
 }
