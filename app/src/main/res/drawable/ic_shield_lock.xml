@@ -1,0 +1,48 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Escudo (cuerpo) con degradado marino -->
+    <path
+        android:pathData="M54,22 L78,32 L78,52 C78,68 68,80 54,86 C40,80 30,68 30,52 L30,32 Z">
+        <aapt:attr name="android:fillColor" xmlns:aapt="http://schemas.android.com/aapt">
+            <gradient
+                android:startX="54" android:startY="22"
+                android:endX="54" android:endY="86"
+                android:type="linear">
+                <item android:offset="0" android:color="#FF2168DE"/>
+                <item android:offset="1" android:color="#FF15517F"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Borde claro del escudo -->
+    <path
+        android:pathData="M54,22 L78,32 L78,52 C78,68 68,80 54,86 C40,80 30,68 30,52 L30,32 Z"
+        android:strokeColor="#FF38BDF8"
+        android:strokeWidth="2"
+        android:fillColor="#00000000"/>
+
+    <!-- Cuerpo del candado -->
+    <path
+        android:pathData="M46,52 L62,52 C63.1,52 64,52.9 64,54 L64,68 C64,69.1 63.1,70 62,70 L46,70 C44.9,70 44,69.1 44,68 L44,54 C44,52.9 44.9,52 46,52 Z"
+        android:fillColor="#FF34D399"/>
+
+    <!-- Arco del candado -->
+    <path
+        android:pathData="M48,52 L48,47 C48,43.7 50.7,41 54,41 C57.3,41 60,43.7 60,47 L60,52"
+        android:strokeColor="#FFEAF6FF"
+        android:strokeWidth="3.5"
+        android:fillColor="#00000000"
+        android:strokeLineCap="round"/>
+
+    <!-- Ojo de la cerradura -->
+    <path
+        android:pathData="M54,57 m-2.5,0 a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0"
+        android:fillColor="#FF0E2A3B"/>
+    <path
+        android:pathData="M53,59 L55,59 L55.7,65 L52.3,65 Z"
+        android:fillColor="#FF0E2A3B"/>
+</vector>
