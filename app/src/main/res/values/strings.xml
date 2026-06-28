@@ -1,0 +1,16 @@
+<resources>
+    <string name="app_name">DNS Guardian</string>
+
+    <!-- PIN parental -->
+    <string name="pin_setup_title">Crea el PIN parental</string>
+    <string name="pin_verify_title">Introduce el PIN parental</string>
+    <string name="pin_save">Guardar PIN</string>
+    <string name="pin_unlock">Desbloquear</string>
+    <string name="pin_saved_ok">PIN guardado</string>
+    <string name="pin_too_short">El PIN debe tener al menos 4 digitos</string>
+    <string name="pin_mismatch">Los PIN no coinciden</string>
+
+    <!-- Servicio de Accesibilidad -->
+    <string name="accessibility_service_label">DNS Guardian — Proteccion de Ajustes</string>
+    <string name="accessibility_description">DNS Guardian usa este servicio para proteger la configuracion del dispositivo con el PIN parental: detecta cuando se abren pantallas protegidas y solicita el PIN antes de permitir cambios. No recopila ni envia datos personales.</string>
+</resources>
