@@ -21,11 +21,11 @@ import java.util.concurrent.TimeUnit
  * HardcodedDns impide que OkHttp use el resolver del sistema (que apuntaría
  * a nuestra propia VPN) para resolver los hostnames de los endpoints DoH.
  */
-class DoHClient(@Suppress("UNUSED_PARAMETER") vpnService: VpnService) {
+class DoHClient(private val vpnService: VpnService) {
 
     companion object {
         const val TAG = "DoHClient"
-        private const val TIMEOUT  = 8L          // segundos por intento
+        private const val TIMEOUT  = 10L         // segundos por intento (DoH en frío puede tardar)
         private val DNS_MEDIA_TYPE = "application/dns-message".toMediaType()
 
         private data class Provider(val url: String, val host: String, val ips: List<String>)
@@ -50,6 +50,9 @@ class DoHClient(@Suppress("UNUSED_PARAMETER") vpnService: VpnService) {
     }
 
     private val client: OkHttpClient = OkHttpClient.Builder()
+        // protect() garantiza que estas conexiones salen por la red física,
+        // no por el TUN — rompe el posible bucle circular en Samsung / One UI.
+        .socketFactory(ProtectedSocketFactory(vpnService))
         .dns(HardcodedDns())
         .connectTimeout(TIMEOUT, TimeUnit.SECONDS)
         .readTimeout(TIMEOUT, TimeUnit.SECONDS)
