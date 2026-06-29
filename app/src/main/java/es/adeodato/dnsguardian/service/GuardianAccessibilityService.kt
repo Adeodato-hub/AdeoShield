@@ -6,7 +6,6 @@ import android.database.ContentObserver
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
-import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import es.adeodato.dnsguardian.security.AppBlockManager
 import es.adeodato.dnsguardian.security.GuardState
@@ -93,17 +92,21 @@ class GuardianAccessibilityService : AccessibilityService() {
         val paginaCriticaBloqueada = tipoCrit != null
         val ajustesBloqueados = esAjustes && AppBlockManager.SYS_SETTINGS in blocked
 
-        Log.e("GSvc", "pkg=$pkg cls=$className txt='$pageText' " +
-              "esAjust=$esAjustes tipoCrit=$tipoCrit ajustBloq=$ajustesBloqueados " +
-              "appBloq=$esAppBloqueada unlocked=${GuardState.isUnlocked()} " +
-              "pinOpen=$pinAbierto lastType='$lastCriticalType'")
-
         if (!esAppBloqueada && !ajustesBloqueados && !paginaCriticaBloqueada) return
         if (!PinManager.isPinSet(this)) return
 
         if (paginaCriticaBloqueada) {
             val mismoTipoConGracia = tipoCrit == lastCriticalType && GuardState.isUnlocked()
-            if (!mismoTipoConGracia) GuardState.lockNow()
+            if (mismoTipoConGracia) {
+                // Pase único: consume la gracia en el primer evento de retorno
+                // para que la siguiente visita exija PIN. pinAbierto bloquea los
+                // eventos duplicados de Samsung durante 1200 ms.
+                GuardState.lockNow()
+                pinAbierto = true
+                handler.postDelayed({ pinAbierto = false }, 1200)
+                return
+            }
+            GuardState.lockNow()
         }
 
         if (GuardState.isUnlocked()) { pinAbierto = false; return }
@@ -111,7 +114,6 @@ class GuardianAccessibilityService : AccessibilityService() {
 
         pinAbierto = true
         if (paginaCriticaBloqueada) lastCriticalType = tipoCrit!!
-        Log.e("GSvc", "→ LANZANDO PIN para tipo='$tipoCrit'")
         lanzarPin()
         handler.postDelayed({ pinAbierto = false }, 1200)
     }
