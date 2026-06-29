@@ -2,8 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
-        tools:ignore="ProtectedPermissions" />
+    <!-- VPN: no requiere ADB; el usuario acepta el diálogo del sistema una vez -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -44,6 +44,22 @@
             android:exported="false"
             android:excludeFromRecents="true" />
 
+        <!-- Servicio VPN local de interceptación DNS (Fase 3) -->
+        <service
+            android:name=".vpn.DnsVpnService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:permission="android.permission.BIND_VPN_SERVICE">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Filtra DNS familiar bloqueando contenido adulto sin ADB" />
+        </service>
+
+        <!-- GuardianService heredado: se mantiene en el manifest pero ya no
+             se arranca; la VPN absorbe su función. -->
         <service
             android:name=".GuardianService"
             android:exported="false"
