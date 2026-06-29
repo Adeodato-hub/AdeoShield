@@ -50,12 +50,13 @@ import es.adeodato.dnsguardian.vpn.DnsVpnService
 
 class MainActivity : ComponentActivity() {
 
-    private var vpnGranted     by mutableStateOf(false)
-    private var adminActive    by mutableStateOf(false)
-    private var pinSet         by mutableStateOf(false)
-    private var privateDnsMode by mutableStateOf("off")
-    private var showDnsWarning by mutableStateOf(false)
-    private var blockedCount   by mutableStateOf(0)
+    private var vpnGranted           by mutableStateOf(false)
+    private var adminActive          by mutableStateOf(false)
+    private var pinSet               by mutableStateOf(false)
+    private var privateDnsMode       by mutableStateOf("off")
+    private var showDnsWarning       by mutableStateOf(false)
+    private var blockedCount         by mutableStateOf(0)
+    private var accessibilityActive  by mutableStateOf(false)
 
     private val vpnLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -72,18 +73,20 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             GuardianScreen(
-                vpnGranted     = vpnGranted,
-                adminActive    = adminActive,
-                pinSet         = pinSet,
-                privateDnsMode = privateDnsMode,
-                showDnsWarning = showDnsWarning,
-                blockedCount   = blockedCount,
+                vpnGranted          = vpnGranted,
+                adminActive         = adminActive,
+                pinSet              = pinSet,
+                privateDnsMode      = privateDnsMode,
+                showDnsWarning      = showDnsWarning,
+                blockedCount        = blockedCount,
+                accessibilityActive = accessibilityActive,
                 onActivateVpn       = ::requestVpnPermission,
                 onActivateAdmin     = ::requestAdmin,
                 onSetupPin          = ::openPinSetup,
                 onDismissWarning    = { showDnsWarning = false },
                 onOpenDnsSettings   = ::openPrivateDnsSettings,
-                onManageBlockedApps = ::openAppBlock
+                onManageBlockedApps = ::openAppBlock,
+                onOpenAccessibility = ::openAccessibilitySettings
             )
         }
     }
@@ -126,6 +129,10 @@ class MainActivity : ComponentActivity() {
         startActivity(Intent(this, AppBlockActivity::class.java))
     }
 
+    private fun openAccessibilitySettings() {
+        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+    }
+
     private fun openPrivateDnsSettings() {
         try {
             startActivity(Intent("android.settings.PRIVATE_DNS_SETTINGS"))
@@ -143,6 +150,8 @@ class MainActivity : ComponentActivity() {
         privateDnsMode = Settings.Global.getString(contentResolver, "private_dns_mode") ?: "off"
         showDnsWarning = privateDnsMode == "hostname"
         blockedCount   = AppBlockManager.getBlocked(this).size
+        val enabledServices = Settings.Secure.getString(contentResolver, "enabled_accessibility_services") ?: ""
+        accessibilityActive = enabledServices.contains(packageName, ignoreCase = true)
     }
 }
 
@@ -171,15 +180,17 @@ fun GuardianScreen(
     privateDnsMode: String,
     showDnsWarning: Boolean,
     blockedCount: Int,
+    accessibilityActive: Boolean,
     onActivateVpn: () -> Unit,
     onActivateAdmin: () -> Unit,
     onSetupPin: () -> Unit,
     onDismissWarning: () -> Unit,
     onOpenDnsSettings: () -> Unit,
-    onManageBlockedApps: () -> Unit
+    onManageBlockedApps: () -> Unit,
+    onOpenAccessibility: () -> Unit
 ) {
     val privateDnsOk = privateDnsMode != "hostname"
-    val todo = vpnGranted && adminActive && pinSet && privateDnsOk
+    val todo = vpnGranted && adminActive && pinSet && privateDnsOk && accessibilityActive
 
     // Diálogo bloqueante: DNS privado con proveedor externo inutiliza el filtro
     if (showDnsWarning) {
@@ -273,6 +284,18 @@ fun GuardianScreen(
             label      = "Ajustar",
             onAction   = onOpenDnsSettings,
             errorColor = privateDnsMode == "hostname"
+        )
+
+        Spacer(Modifier.height(12.dp))
+
+        ProtectionCard(
+            emoji    = "♿",
+            title    = "Bloqueo de apps (Accesibilidad)",
+            desc     = if (accessibilityActive) "Servicio activo — bloqueo y PIN en Ajustes"
+                       else                     "Desactivado — bloqueo de apps inoperativo",
+            ok       = accessibilityActive,
+            label    = "Activar",
+            onAction = onOpenAccessibility
         )
 
         Spacer(Modifier.height(12.dp))
