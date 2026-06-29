@@ -6,6 +6,7 @@ import android.database.ContentObserver
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import es.adeodato.dnsguardian.security.AppBlockManager
 import es.adeodato.dnsguardian.security.GuardState
@@ -88,19 +89,19 @@ class GuardianAccessibilityService : AccessibilityService() {
 
         if (esLanzador) { lastCriticalType = ""; GuardState.lockNow(); return }
 
-        // tipoCrit: tipo semántico si esta página es crítica y está habilitada,
-        // null si no aplica bloqueo de página crítica.
         val tipoCrit = if (esAjustes) tipoCritico(className, pageText, blocked) else null
         val paginaCriticaBloqueada = tipoCrit != null
         val ajustesBloqueados = esAjustes && AppBlockManager.SYS_SETTINGS in blocked
+
+        Log.e("GSvc", "pkg=$pkg cls=$className txt='$pageText' " +
+              "esAjust=$esAjustes tipoCrit=$tipoCrit ajustBloq=$ajustesBloqueados " +
+              "appBloq=$esAppBloqueada unlocked=${GuardState.isUnlocked()} " +
+              "pinOpen=$pinAbierto lastType='$lastCriticalType'")
 
         if (!esAppBloqueada && !ajustesBloqueados && !paginaCriticaBloqueada) return
         if (!PinManager.isPinSet(this)) return
 
         if (paginaCriticaBloqueada) {
-            // Revocar gracia solo si el tipo de página es distinto al que acabamos
-            // de desbloquear, o si la gracia ya expiró. Esto evita el bucle donde
-            // eventos repetidos de la misma página revocan el PIN recién concedido.
             val mismoTipoConGracia = tipoCrit == lastCriticalType && GuardState.isUnlocked()
             if (!mismoTipoConGracia) GuardState.lockNow()
         }
@@ -110,6 +111,7 @@ class GuardianAccessibilityService : AccessibilityService() {
 
         pinAbierto = true
         if (paginaCriticaBloqueada) lastCriticalType = tipoCrit!!
+        Log.e("GSvc", "→ LANZANDO PIN para tipo='$tipoCrit'")
         lanzarPin()
         handler.postDelayed({ pinAbierto = false }, 1200)
     }
