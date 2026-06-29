@@ -21,6 +21,22 @@ class GuardianAccessibilityService : AccessibilityService() {
 
     private val launcherHints = listOf("launcher", "home")
 
+    // Palabras clave en el nombre de clase de la Activity que indican una página
+    // crítica dentro de Ajustes. Cuando se detectan, se invalida la ventana de
+    // gracia antes de comprobarla: el PIN se pide siempre, aunque el padre acabe
+    // de desbloquearlo para navegar por otras secciones de Ajustes.
+    private val sensibleKeywords = listOf(
+        "accessibility",        // Accesibilidad → puede desactivar el servicio
+        "vpn",                  // VPN → puede desconectar el filtro DNS
+        "deviceadmin",          // Administradores → puede revocar el admin
+        "device_admin",
+        "privatednssettings",   // DNS Privado → puede reactivar proveedor externo
+        "privatedns",
+        "trustedcredentials",   // Certificados → relevante en contexto MDM
+        "developeroptionsdashboard", // Opciones de desarrollador → ADB
+        "developersettings"
+    )
+
     // Se lee de SharedPreferences en cada evento para reflejar cambios en tiempo real.
     private val blockedApps: Set<String> get() = AppBlockManager.getBlocked(this)
 
@@ -36,9 +52,10 @@ class GuardianAccessibilityService : AccessibilityService() {
         // Nuestra propia app: nunca se bloquea (es la pantalla del PIN).
         if (pkg == packageName) { pinAbierto = false; return }
 
-        val esAjustes = pkg in settingsPackages || pkg.contains("settings", true)
+        val className     = event.className?.toString()?.lowercase() ?: ""
+        val esAjustes     = pkg in settingsPackages || pkg.contains("settings", true)
         val esAppBloqueada = pkg in blockedApps
-        val esLanzador = launcherHints.any { pkg.contains(it, true) }
+        val esLanzador    = launcherHints.any { pkg.contains(it, true) }
 
         // Al llegar al HOME, re-armamos el candado.
         if (esLanzador) { GuardState.lockNow(); return }
@@ -47,7 +64,13 @@ class GuardianAccessibilityService : AccessibilityService() {
 
         if (!PinManager.isPinSet(this)) return
 
-        // Ventana de gracia tras meter el PIN: dejar pasar.
+        // Página crítica dentro de Ajustes: invalidar la gracia ahora mismo para
+        // que el PIN se pida siempre, aunque el padre acabe de desbloquearlo.
+        if (esAjustes && sensibleKeywords.any { className.contains(it) }) {
+            GuardState.lockNow()
+        }
+
+        // Ventana de gracia tras meter el PIN: dejar pasar (páginas no críticas).
         if (GuardState.isUnlocked()) { pinAbierto = false; return }
 
         if (pinAbierto) return
