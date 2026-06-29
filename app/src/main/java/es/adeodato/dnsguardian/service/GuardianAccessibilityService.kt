@@ -15,6 +15,7 @@ class GuardianAccessibilityService : AccessibilityService() {
     private val settingsPackages = setOf(
         "com.android.settings",
         "com.samsung.android.settings",
+        "com.samsung.accessibility",          // app principal de Accesibilidad en Samsung
         "com.google.android.packageinstaller",
         "com.android.packageinstaller"
     )
@@ -42,11 +43,13 @@ class GuardianAccessibilityService : AccessibilityService() {
         val esAjustes  = pkg in settingsPackages || pkg.contains("settings", true)
         val esAppBloqueada = pkg in blocked
 
+        val pageText = event.text?.joinToString(" ")?.lowercase() ?: ""
+
         // Al llegar al HOME, re-armamos el candado para la próxima vez.
         if (esLanzador) { GuardState.lockNow(); return }
 
         // ¿Es una sub-página crítica que el padre ha configurado como bloqueada?
-        val paginaCriticaBloqueada = esAjustes && paginaCriticaBloqueada(className, blocked)
+        val paginaCriticaBloqueada = esAjustes && paginaCriticaBloqueada(className, pageText, blocked)
         // ¿Está bloqueada la app de Ajustes completa?
         val ajustesBloqueados = esAjustes && AppBlockManager.SYS_SETTINGS in blocked
 
@@ -80,16 +83,28 @@ class GuardianAccessibilityService : AccessibilityService() {
 
     // Detecta si la clase de la ventana actual corresponde a una sub-página
     // crítica que el padre ha marcado como bloqueada en AppBlockActivity.
-    private fun paginaCriticaBloqueada(className: String, blocked: Set<String>): Boolean = when {
-        className.contains("accessibility")   -> AppBlockManager.SYS_ACCESSIBILITY in blocked
-        className.contains("vpn")             -> AppBlockManager.SYS_VPN in blocked
-        className.contains("privatednssettings") ||
-        className.contains("privatedns")      -> AppBlockManager.SYS_DNS in blocked
-        className.contains("developeroptionsdashboard") ||
-        className.contains("developersettings") -> AppBlockManager.SYS_DEV_OPTIONS in blocked
-        className.contains("deviceadmin") ||
-        className.contains("device_admin")    -> AppBlockManager.SYS_SETTINGS in blocked
-        else                                  -> false
+    private fun paginaCriticaBloqueada(className: String, pageText: String, blocked: Set<String>): Boolean {
+        val isAccessibility = className.contains("accessibility") ||
+                              pageText.contains("accesib") ||
+                              pageText.contains("accessibility") ||
+                              pageText.contains("servicios instalados") ||
+                              pageText.contains("installed services")
+        val isVpn  = className.contains("vpn") || pageText == "vpn"
+        val isDns  = className.contains("privatednssettings") || className.contains("privatedns") ||
+                     pageText.contains("dns privado") || pageText.contains("private dns")
+        val isDev  = className.contains("developeroptionsdashboard") ||
+                     className.contains("developersettings") ||
+                     pageText.contains("opciones de desarrollador") ||
+                     pageText.contains("developer options")
+        val isAdmin = className.contains("deviceadmin") || className.contains("device_admin")
+        return when {
+            isAccessibility -> AppBlockManager.SYS_ACCESSIBILITY in blocked
+            isVpn           -> AppBlockManager.SYS_VPN           in blocked
+            isDns           -> AppBlockManager.SYS_DNS           in blocked
+            isDev           -> AppBlockManager.SYS_DEV_OPTIONS   in blocked
+            isAdmin         -> AppBlockManager.SYS_SETTINGS      in blocked
+            else            -> false
+        }
     }
 
     override fun onInterrupt() {}
