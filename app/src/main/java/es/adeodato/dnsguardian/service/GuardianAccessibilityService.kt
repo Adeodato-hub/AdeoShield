@@ -29,9 +29,14 @@ class GuardianAccessibilityService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
     private var pinAbierto = false
     private var adbObserver: ContentObserver? = null
+    // Clave de la última página crítica para la que se mostró PIN.
+    // Evita que eventos repetidos de la misma página revoquen la gracia
+    // recién concedida y provoquen un bucle infinito de PIN.
+    private var lastCriticalPageKey = ""
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        lastCriticalPageKey = ""
         registrarObservadorAdb()
     }
 
@@ -91,7 +96,11 @@ class GuardianAccessibilityService : AccessibilityService() {
 
         val pageText = event.text?.joinToString(" ")?.lowercase() ?: ""
 
-        if (esLanzador) { GuardState.lockNow(); return }
+        // Clave única por página: diferencia p.ej. VPN de DNS aunque ambas usen
+        // la misma Activity genérica (subsettings) en Samsung.
+        val pageKey = "$pkg/$className/$pageText"
+
+        if (esLanzador) { lastCriticalPageKey = ""; GuardState.lockNow(); return }
 
         val paginaCriticaBloqueada = esAjustes && paginaCriticaBloqueada(className, pageText, blocked)
         val ajustesBloqueados = esAjustes && AppBlockManager.SYS_SETTINGS in blocked
@@ -100,12 +109,19 @@ class GuardianAccessibilityService : AccessibilityService() {
 
         if (!PinManager.isPinSet(this)) return
 
-        if (paginaCriticaBloqueada) GuardState.lockNow()
+        if (paginaCriticaBloqueada) {
+            // Revocar gracia solo si es una página distinta a la que se acaba de
+            // desbloquear, o si la gracia ya expiró. Evita el bucle donde eventos
+            // repetidos de la misma página cancelan el PIN recién concedido.
+            val mismaPageConGracia = pageKey == lastCriticalPageKey && GuardState.isUnlocked()
+            if (!mismaPageConGracia) GuardState.lockNow()
+        }
 
         if (GuardState.isUnlocked()) { pinAbierto = false; return }
 
         if (pinAbierto) return
         pinAbierto = true
+        if (paginaCriticaBloqueada) lastCriticalPageKey = pageKey
 
         startActivity(Intent(this, PinActivity::class.java).apply {
             putExtra(PinActivity.EXTRA_MODE, PinActivity.MODE_VERIFY)
