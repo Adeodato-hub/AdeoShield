@@ -15,6 +15,22 @@ object AppBlockManager {
     const val SYS_DEV_OPTIONS   = "_sys_devopt_"         // Opciones de desarrollador
     const val SYS_DEVICE_ADMIN  = "_sys_deviceadmin_"   // Administración del dispositivo
 
+    // Llamar una sola vez al arrancar (desde DNSGuardianApp).
+    // Si es la primera instalación (clave inexistente), activa las protecciones
+    // críticas por defecto para que el padre no tenga que configurar nada.
+    fun ensureDefaults(ctx: Context) {
+        val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (!prefs.contains(KEY_SET)) {
+            setBlocked(ctx, setOf(
+                SYS_ACCESSIBILITY,
+                SYS_DEVICE_ADMIN,
+                SYS_VPN,
+                SYS_DNS,
+                SYS_DEV_OPTIONS
+            ))
+        }
+    }
+
     fun getBlocked(ctx: Context): Set<String> =
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getStringSet(KEY_SET, emptySet()) ?: emptySet()
