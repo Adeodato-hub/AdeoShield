@@ -149,7 +149,7 @@ class MainActivity : ComponentActivity() {
         pinSet         = PinManager.isPinSet(this)
         privateDnsMode = Settings.Global.getString(contentResolver, "private_dns_mode") ?: "off"
         showDnsWarning = privateDnsMode == "hostname"
-        blockedCount   = AppBlockManager.getBlocked(this).size
+        blockedCount   = AppBlockManager.getBlocked(this).count { !it.startsWith("_sys_") }
         val enabledServices = Settings.Secure.getString(contentResolver, "enabled_accessibility_services") ?: ""
         accessibilityActive = enabledServices.contains(packageName, ignoreCase = true)
     }

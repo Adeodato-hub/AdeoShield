@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Switch
@@ -49,11 +48,34 @@ import es.adeodato.dnsguardian.security.AppBlockManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-private val Fondo   = Color(0xFF0E2A3B)
-private val Tarjeta = Color(0xFF163345)
-private val Acento  = Color(0xFF38BDF8)
-private val Verde   = Color(0xFF34D399)
-private val Rojo    = Color(0xFFF87171)
+private val Fondo  = Color(0xFF0E2A3B)
+private val Acento = Color(0xFF38BDF8)
+private val Rojo   = Color(0xFFF87171)
+private val Ambar  = Color(0xFFFBBF24)
+
+// ── Protecciones del sistema ──────────────────────────────────────────────────
+
+private data class SysItem(
+    val key: String,
+    val emoji: String,
+    val label: String,
+    val desc: String
+)
+
+private val SYSTEM_ITEMS = listOf(
+    SysItem(AppBlockManager.SYS_SETTINGS,      "⚙️",  "Ajustes del sistema",
+            "Requiere PIN para abrir cualquier sección de Ajustes"),
+    SysItem(AppBlockManager.SYS_ACCESSIBILITY, "♿",  "Accesibilidad",
+            "PIN extra al acceder a Accesibilidad (aunque Ajustes esté desbloqueado)"),
+    SysItem(AppBlockManager.SYS_VPN,           "🔒", "Configuración VPN",
+            "PIN extra para la sección VPN dentro de Ajustes"),
+    SysItem(AppBlockManager.SYS_DNS,           "🌐", "DNS Privado",
+            "PIN extra para la sección DNS Privado dentro de Ajustes"),
+    SysItem(AppBlockManager.SYS_DEV_OPTIONS,   "⚠️",  "Opciones de desarrollador",
+            "PIN extra para activar ADB u otras opciones de desarrollador")
+)
+
+// ── Apps de usuario ───────────────────────────────────────────────────────────
 
 data class AppInfo(
     val packageName: String,
@@ -61,17 +83,19 @@ data class AppInfo(
     val icon: ImageBitmap
 )
 
+// ── Activity ──────────────────────────────────────────────────────────────────
+
 class AppBlockActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        val pm = packageManager
+        val pm     = packageManager
         val ownPkg = packageName
 
         setContent {
-            var apps by remember { mutableStateOf<List<AppInfo>?>(null) }
+            var apps    by remember { mutableStateOf<List<AppInfo>?>(null) }
             var blocked by remember { mutableStateOf(AppBlockManager.getBlocked(this)) }
 
             LaunchedEffect(Unit) {
@@ -81,8 +105,8 @@ class AppBlockActivity : ComponentActivity() {
             AppBlockScreen(
                 apps    = apps,
                 blocked = blocked,
-                onToggle = { pkg ->
-                    AppBlockManager.toggle(this, pkg)
+                onToggle = { key ->
+                    AppBlockManager.toggle(this, key)
                     blocked = AppBlockManager.getBlocked(this)
                 },
                 onBack = { finish() }
@@ -90,6 +114,8 @@ class AppBlockActivity : ComponentActivity() {
         }
     }
 }
+
+// ── UI ────────────────────────────────────────────────────────────────────────
 
 @Composable
 private fun AppBlockScreen(
@@ -116,14 +142,15 @@ private fun AppBlockScreen(
             Spacer(Modifier.width(8.dp))
             Column {
                 Text(
-                    text       = "Apps bloqueadas",
+                    text       = "Bloqueo de acceso",
                     color      = Color.White,
                     fontSize   = 20.sp,
                     fontWeight = FontWeight.Bold
                 )
+                val userBlocked = blocked.count { !it.startsWith("_sys_") }
+                val sysBlocked  = blocked.count { it.startsWith("_sys_") }
                 Text(
-                    text     = if (apps == null) "Cargando…"
-                               else "${blocked.size} de ${apps.size} bloqueadas",
+                    text     = "$userBlocked apps · $sysBlocked protecciones del sistema",
                     color    = Acento,
                     fontSize = 12.sp
                 )
@@ -132,30 +159,109 @@ private fun AppBlockScreen(
 
         HorizontalDivider(color = Color(0xFF1E3D50))
 
-        when {
-            apps == null -> {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = Acento)
-                }
+        LazyColumn {
+            // ── Sección: protecciones del sistema ─────────────────────────────
+            item {
+                SectionHeader(
+                    title = "PROTECCIONES DEL SISTEMA",
+                    subtitle = "Estas opciones protegen los Ajustes del dispositivo"
+                )
             }
-            apps.isEmpty() -> {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No hay apps de usuario instaladas.", color = Color(0xFFB9C7D1))
-                }
+            items(SYSTEM_ITEMS, key = { it.key }) { item ->
+                SysRow(
+                    item      = item,
+                    isBlocked = item.key in blocked,
+                    onToggle  = { onToggle(item.key) }
+                )
+                HorizontalDivider(color = Color(0xFF1A2E3B), thickness = 0.5.dp)
             }
-            else -> {
-                LazyColumn {
-                    items(apps, key = { it.packageName }) { app ->
-                        AppRow(
-                            app       = app,
-                            isBlocked = app.packageName in blocked,
-                            onToggle  = { onToggle(app.packageName) }
-                        )
-                        HorizontalDivider(color = Color(0xFF1A2E3B), thickness = 0.5.dp)
+
+            // ── Sección: apps de usuario ──────────────────────────────────────
+            item {
+                SectionHeader(
+                    title    = "APLICACIONES DE USUARIO",
+                    subtitle = when (apps) {
+                        null -> "Cargando…"
+                        else -> "${apps.size} apps instaladas"
                     }
+                )
+            }
+            when {
+                apps == null -> item {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) { CircularProgressIndicator(color = Acento) }
+                }
+                apps.isEmpty() -> item {
+                    Text(
+                        "No hay apps de usuario instaladas.",
+                        color    = Color(0xFFB9C7D1),
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+                else -> items(apps, key = { it.packageName }) { app ->
+                    AppRow(
+                        app       = app,
+                        isBlocked = app.packageName in blocked,
+                        onToggle  = { onToggle(app.packageName) }
+                    )
+                    HorizontalDivider(color = Color(0xFF1A2E3B), thickness = 0.5.dp)
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SectionHeader(title: String, subtitle: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFF0A1F2E))
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+    ) {
+        Text(text = title,    color = Acento, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Text(text = subtitle, color = Color(0xFF6A8090), fontSize = 11.sp)
+    }
+}
+
+@Composable
+private fun SysRow(item: SysItem, isBlocked: Boolean, onToggle: () -> Unit) {
+    Row(
+        modifier          = Modifier
+            .fillMaxWidth()
+            .background(if (isBlocked) Color(0xFF1A0A00) else Fondo)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text = item.emoji, fontSize = 24.sp)
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text       = item.label,
+                color      = if (isBlocked) Ambar else Color.White,
+                fontSize   = 14.sp,
+                fontWeight = if (isBlocked) FontWeight.SemiBold else FontWeight.Normal
+            )
+            Text(
+                text     = item.desc,
+                color    = Color(0xFF6A8090),
+                fontSize = 11.sp
+            )
+        }
+        Switch(
+            checked         = isBlocked,
+            onCheckedChange = { onToggle() },
+            colors          = SwitchDefaults.colors(
+                checkedThumbColor   = Color.White,
+                checkedTrackColor   = Ambar,
+                uncheckedThumbColor = Color(0xFF6A8090),
+                uncheckedTrackColor = Color(0xFF1E3D50)
+            )
+        )
     }
 }
 
@@ -169,9 +275,9 @@ private fun AppRow(app: AppInfo, isBlocked: Boolean, onToggle: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Image(
-            bitmap      = app.icon,
+            bitmap             = app.icon,
             contentDescription = app.label,
-            modifier    = Modifier.size(40.dp)
+            modifier           = Modifier.size(40.dp)
         )
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -195,14 +301,16 @@ private fun AppRow(app: AppInfo, isBlocked: Boolean, onToggle: () -> Unit) {
             checked         = isBlocked,
             onCheckedChange = { onToggle() },
             colors          = SwitchDefaults.colors(
-                checkedThumbColor       = Color.White,
-                checkedTrackColor       = Rojo,
-                uncheckedThumbColor     = Color(0xFF6A8090),
-                uncheckedTrackColor     = Color(0xFF1E3D50)
+                checkedThumbColor   = Color.White,
+                checkedTrackColor   = Rojo,
+                uncheckedThumbColor = Color(0xFF6A8090),
+                uncheckedTrackColor = Color(0xFF1E3D50)
             )
         )
     }
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 private fun loadUserApps(pm: PackageManager, ownPackage: String): List<AppInfo> =
     pm.getInstalledApplications(PackageManager.GET_META_DATA)
@@ -223,8 +331,8 @@ private fun loadUserApps(pm: PackageManager, ownPackage: String): List<AppInfo> 
 
 private fun Drawable.toBitmap(): Bitmap {
     if (this is BitmapDrawable && bitmap != null) return bitmap
-    val w = intrinsicWidth.coerceAtLeast(1)
-    val h = intrinsicHeight.coerceAtLeast(1)
+    val w   = intrinsicWidth.coerceAtLeast(1)
+    val h   = intrinsicHeight.coerceAtLeast(1)
     val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bmp)
     setBounds(0, 0, canvas.width, canvas.height)
