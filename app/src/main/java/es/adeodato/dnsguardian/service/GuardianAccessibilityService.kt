@@ -96,13 +96,15 @@ class GuardianAccessibilityService : AccessibilityService() {
                      className.contains("developersettings") ||
                      pageText.contains("opciones de desarrollador") ||
                      pageText.contains("developer options")
-        val isAdmin = className.contains("deviceadmin") || className.contains("device_admin")
+        val isAdmin = className.contains("deviceadmin") || className.contains("device_admin") ||
+                      pageText.contains("administra") && pageText.contains("dispositivo") ||
+                      className.contains("uninstall")   // flujo desinstalar → admin
         return when {
             isAccessibility -> AppBlockManager.SYS_ACCESSIBILITY in blocked
             isVpn           -> AppBlockManager.SYS_VPN           in blocked
             isDns           -> AppBlockManager.SYS_DNS           in blocked
             isDev           -> AppBlockManager.SYS_DEV_OPTIONS   in blocked
-            isAdmin         -> AppBlockManager.SYS_SETTINGS      in blocked
+            isAdmin         -> AppBlockManager.SYS_DEVICE_ADMIN  in blocked
             else            -> false
         }
     }
