@@ -3,7 +3,6 @@ package es.adeodato.dnsguardian.ui
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
-import android.provider.Settings
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -94,10 +93,7 @@ class PinActivity : ComponentActivity() {
                                 title = "Protección activa",
                                 subtitle = "Introduce el PIN parental para continuar",
                                 onSuccess = {
-                                    if (isSettingsGuard) {
-                                        GuardState.grantAccess()
-                                        abrirAjustes()
-                                    }
+                                    if (isSettingsGuard) GuardState.grantAccess()
                                     setResult(Activity.RESULT_OK)
                                     finish()
                                 }
@@ -107,14 +103,6 @@ class PinActivity : ComponentActivity() {
                 }
             }
         }
-    }
-
-    private fun abrirAjustes() {
-        try {
-            startActivity(Intent(Settings.ACTION_SETTINGS).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            })
-        } catch (_: Exception) { }
     }
 
     private fun goHome() {
