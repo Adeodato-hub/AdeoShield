@@ -20,7 +20,7 @@ object AppBlockManager {
 
     fun setBlocked(ctx: Context, packages: Set<String>) {
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().putStringSet(KEY_SET, packages).apply()
+            .edit().putStringSet(KEY_SET, packages).commit()
     }
 
     fun toggle(ctx: Context, pkg: String) {
