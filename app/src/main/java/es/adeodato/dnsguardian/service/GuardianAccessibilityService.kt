@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
+import es.adeodato.dnsguardian.security.AppBlockManager
 import es.adeodato.dnsguardian.security.GuardState
 import es.adeodato.dnsguardian.security.PinManager
 import es.adeodato.dnsguardian.ui.PinActivity
@@ -20,7 +21,8 @@ class GuardianAccessibilityService : AccessibilityService() {
 
     private val launcherHints = listOf("launcher", "home")
 
-    private val blockedApps = setOf<String>()
+    // Se lee de SharedPreferences en cada evento para reflejar cambios en tiempo real.
+    private val blockedApps: Set<String> get() = AppBlockManager.getBlocked(this)
 
     private val handler = Handler(Looper.getMainLooper())
     private var pinAbierto = false

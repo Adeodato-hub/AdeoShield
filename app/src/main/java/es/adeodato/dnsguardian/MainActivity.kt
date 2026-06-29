@@ -42,7 +42,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import es.adeodato.dnsguardian.security.AppBlockManager
 import es.adeodato.dnsguardian.security.PinManager
+import es.adeodato.dnsguardian.ui.AppBlockActivity
 import es.adeodato.dnsguardian.ui.PinActivity
 import es.adeodato.dnsguardian.vpn.DnsVpnService
 
@@ -53,6 +55,7 @@ class MainActivity : ComponentActivity() {
     private var pinSet         by mutableStateOf(false)
     private var privateDnsMode by mutableStateOf("off")
     private var showDnsWarning by mutableStateOf(false)
+    private var blockedCount   by mutableStateOf(0)
 
     private val vpnLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -74,11 +77,13 @@ class MainActivity : ComponentActivity() {
                 pinSet         = pinSet,
                 privateDnsMode = privateDnsMode,
                 showDnsWarning = showDnsWarning,
-                onActivateVpn     = ::requestVpnPermission,
-                onActivateAdmin   = ::requestAdmin,
-                onSetupPin        = ::openPinSetup,
-                onDismissWarning  = { showDnsWarning = false },
-                onOpenDnsSettings = ::openPrivateDnsSettings
+                blockedCount   = blockedCount,
+                onActivateVpn       = ::requestVpnPermission,
+                onActivateAdmin     = ::requestAdmin,
+                onSetupPin          = ::openPinSetup,
+                onDismissWarning    = { showDnsWarning = false },
+                onOpenDnsSettings   = ::openPrivateDnsSettings,
+                onManageBlockedApps = ::openAppBlock
             )
         }
     }
@@ -117,6 +122,10 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private fun openAppBlock() {
+        startActivity(Intent(this, AppBlockActivity::class.java))
+    }
+
     private fun openPrivateDnsSettings() {
         try {
             startActivity(Intent("android.settings.PRIVATE_DNS_SETTINGS"))
@@ -132,8 +141,8 @@ class MainActivity : ComponentActivity() {
         adminActive    = isAdminActive(this)
         pinSet         = PinManager.isPinSet(this)
         privateDnsMode = Settings.Global.getString(contentResolver, "private_dns_mode") ?: "off"
-        // Solo mostramos el diálogo bloqueante cuando hay un proveedor externo configurado
         showDnsWarning = privateDnsMode == "hostname"
+        blockedCount   = AppBlockManager.getBlocked(this).size
     }
 }
 
@@ -161,11 +170,13 @@ fun GuardianScreen(
     pinSet: Boolean,
     privateDnsMode: String,
     showDnsWarning: Boolean,
+    blockedCount: Int,
     onActivateVpn: () -> Unit,
     onActivateAdmin: () -> Unit,
     onSetupPin: () -> Unit,
     onDismissWarning: () -> Unit,
-    onOpenDnsSettings: () -> Unit
+    onOpenDnsSettings: () -> Unit,
+    onManageBlockedApps: () -> Unit
 ) {
     val privateDnsOk = privateDnsMode != "hostname"
     val todo = vpnGranted && adminActive && pinSet && privateDnsOk
@@ -267,6 +278,19 @@ fun GuardianScreen(
         Spacer(Modifier.height(12.dp))
 
         ProtectionCard(
+            emoji              = "🚫",
+            title              = "Apps bloqueadas",
+            desc               = if (blockedCount == 0) "Ninguna app bloqueada — toca para gestionar"
+                                 else "$blockedCount ${if (blockedCount == 1) "app bloqueada" else "apps bloqueadas"}",
+            ok                 = true,
+            label              = "Gestionar",
+            onAction           = onManageBlockedApps,
+            forceActiveButton  = true
+        )
+
+        Spacer(Modifier.height(12.dp))
+
+        ProtectionCard(
             emoji    = "🛡️",
             title    = "Administrador del dispositivo",
             desc     = if (adminActive) "Desinstalación bloqueada"
@@ -322,7 +346,8 @@ private fun ProtectionCard(
     ok: Boolean,
     label: String,
     onAction: () -> Unit,
-    errorColor: Boolean = false
+    errorColor: Boolean = false,
+    forceActiveButton: Boolean = false
 ) {
     val indicador = when {
         ok         -> Verde
@@ -360,17 +385,18 @@ private fun ProtectionCard(
                 Text(text = desc, color = Color(0xFFB9C7D1), fontSize = 12.sp)
             }
             Spacer(Modifier.width(8.dp))
+            val activeButton = !ok || forceActiveButton
             Button(
-                onClick = onAction,
-                colors  = ButtonDefaults.buttonColors(
-                    containerColor = if (!ok) Acento else Color(0xFF1E3D50)
+                onClick  = onAction,
+                colors   = ButtonDefaults.buttonColors(
+                    containerColor = if (activeButton) Acento else Color(0xFF1E3D50)
                 ),
                 modifier = Modifier.size(width = 88.dp, height = 36.dp)
             ) {
                 Text(
                     text       = label,
                     fontSize   = 12.sp,
-                    color      = if (!ok) Color(0xFF0E2A3B) else Color(0xFF88A0B0),
+                    color      = if (activeButton) Color(0xFF0E2A3B) else Color(0xFF88A0B0),
                     fontWeight = FontWeight.Bold
                 )
             }
