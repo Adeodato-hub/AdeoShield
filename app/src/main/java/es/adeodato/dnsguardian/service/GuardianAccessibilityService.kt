@@ -2,8 +2,10 @@ package es.adeodato.dnsguardian.service
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
+import android.database.ContentObserver
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
 import es.adeodato.dnsguardian.security.AppBlockManager
 import es.adeodato.dnsguardian.security.GuardState
@@ -22,11 +24,56 @@ class GuardianAccessibilityService : AccessibilityService() {
 
     private val launcherHints = listOf("launcher", "home")
 
-    // Se lee en cada evento para reflejar cambios del padre en tiempo real.
     private val blockedApps: Set<String> get() = AppBlockManager.getBlocked(this)
 
     private val handler = Handler(Looper.getMainLooper())
     private var pinAbierto = false
+    private var adbObserver: ContentObserver? = null
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        registrarObservadorAdb()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        adbObserver?.let { contentResolver.unregisterContentObserver(it) }
+    }
+
+    // Segunda línea de defensa: si ADB se activa por cualquier vía (incluso
+    // sin pasar por la UI de Opciones de Desarrollador), se exige PIN.
+    private fun registrarObservadorAdb() {
+        val obs = object : ContentObserver(handler) {
+            override fun onChange(selfChange: Boolean) {
+                val adbActivo = Settings.Global.getInt(
+                    contentResolver, Settings.Global.ADB_ENABLED, 0) == 1
+                if (adbActivo &&
+                    AppBlockManager.SYS_DEV_OPTIONS in blockedApps &&
+                    PinManager.isPinSet(this@GuardianAccessibilityService)
+                ) {
+                    GuardState.lockNow()
+                    if (!pinAbierto) {
+                        pinAbierto = true
+                        startActivity(Intent(this@GuardianAccessibilityService, PinActivity::class.java).apply {
+                            putExtra(PinActivity.EXTRA_MODE, PinActivity.MODE_VERIFY)
+                            putExtra(PinActivity.EXTRA_REASON, PinActivity.REASON_SETTINGS_GUARD)
+                            addFlags(
+                                Intent.FLAG_ACTIVITY_NEW_TASK or
+                                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                                Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                                Intent.FLAG_ACTIVITY_NO_ANIMATION
+                            )
+                        })
+                        handler.postDelayed({ pinAbierto = false }, 1200)
+                    }
+                }
+            }
+        }
+        adbObserver = obs
+        contentResolver.registerContentObserver(
+            Settings.Global.getUriFor(Settings.Global.ADB_ENABLED), false, obs
+        )
+    }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event ?: return
@@ -35,7 +82,6 @@ class GuardianAccessibilityService : AccessibilityService() {
         val pkg = event.packageName?.toString() ?: return
         val className = event.className?.toString()?.lowercase() ?: ""
 
-        // Nunca bloquear nuestra propia app (es donde aparece el PIN).
         if (pkg == packageName) { pinAbierto = false; return }
 
         val blocked = blockedApps
@@ -45,24 +91,17 @@ class GuardianAccessibilityService : AccessibilityService() {
 
         val pageText = event.text?.joinToString(" ")?.lowercase() ?: ""
 
-        // Al llegar al HOME, re-armamos el candado para la próxima vez.
         if (esLanzador) { GuardState.lockNow(); return }
 
-        // ¿Es una sub-página crítica que el padre ha configurado como bloqueada?
         val paginaCriticaBloqueada = esAjustes && paginaCriticaBloqueada(className, pageText, blocked)
-        // ¿Está bloqueada la app de Ajustes completa?
         val ajustesBloqueados = esAjustes && AppBlockManager.SYS_SETTINGS in blocked
 
-        // Si no hay ningún motivo para pedir PIN, salir sin hacer nada.
         if (!esAppBloqueada && !ajustesBloqueados && !paginaCriticaBloqueada) return
 
         if (!PinManager.isPinSet(this)) return
 
-        // Las páginas críticas configuradas como bloqueadas invalidan la gracia:
-        // el PIN se pide siempre, incluso dentro de una sesión de Ajustes abierta.
         if (paginaCriticaBloqueada) GuardState.lockNow()
 
-        // Ventana de gracia activa: el padre acaba de desbloquear, dejar pasar.
         if (GuardState.isUnlocked()) { pinAbierto = false; return }
 
         if (pinAbierto) return
@@ -81,8 +120,6 @@ class GuardianAccessibilityService : AccessibilityService() {
         handler.postDelayed({ pinAbierto = false }, 1200)
     }
 
-    // Detecta si la clase de la ventana actual corresponde a una sub-página
-    // crítica que el padre ha marcado como bloqueada en AppBlockActivity.
     private fun paginaCriticaBloqueada(className: String, pageText: String, blocked: Set<String>): Boolean {
         val isAccessibility = className.contains("accessibility") ||
                               pageText.contains("accesib") ||
@@ -92,13 +129,22 @@ class GuardianAccessibilityService : AccessibilityService() {
         val isVpn  = className.contains("vpn") || pageText == "vpn"
         val isDns  = className.contains("privatednssettings") || className.contains("privatedns") ||
                      pageText.contains("dns privado") || pageText.contains("private dns")
+        // Primera línea: bloquea la página principal Y sub-páginas (depuración USB,
+        // depuración inalámbrica, ADB Wi-Fi) por className y por título en español/inglés.
         val isDev  = className.contains("developeroptionsdashboard") ||
                      className.contains("developersettings") ||
+                     className.contains("developmentoptions") ||
+                     className.contains("wirelessdebugging") ||
+                     className.contains("adbwifi") ||
                      pageText.contains("opciones de desarrollador") ||
-                     pageText.contains("developer options")
+                     pageText.contains("developer options") ||
+                     pageText.contains("depuración usb") ||
+                     pageText.contains("depuración inalámbrica") ||
+                     pageText.contains("usb debugging") ||
+                     pageText.contains("wireless debugging")
         val isAdmin = className.contains("deviceadmin") || className.contains("device_admin") ||
-                      pageText.contains("administra") && pageText.contains("dispositivo") ||
-                      className.contains("uninstall")   // flujo desinstalar → admin
+                      (pageText.contains("administra") && pageText.contains("dispositivo")) ||
+                      className.contains("uninstall")
         return when {
             isAccessibility -> AppBlockManager.SYS_ACCESSIBILITY in blocked
             isVpn           -> AppBlockManager.SYS_VPN           in blocked
