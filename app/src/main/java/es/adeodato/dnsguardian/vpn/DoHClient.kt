@@ -73,7 +73,7 @@ class DoHClient(private val vpnService: VpnService) {
             client.newCall(request).execute().use { resp ->
                 if (!resp.isSuccessful) return null
                 val bytes = resp.body?.bytes()
-                if (bytes.isNullOrEmpty()) null else bytes
+                if (bytes == null || bytes.isEmpty()) null else bytes
             }
         } catch (e: Exception) {
             Log.w(TAG, "${provider.host}: ${e.javaClass.simpleName}: ${e.message}")
