@@ -67,6 +67,8 @@ private val SYSTEM_ITEMS = listOf(
             "Requiere PIN para abrir cualquier sección de Ajustes"),
     SysItem(AppBlockManager.SYS_ACCESSIBILITY, "♿",  "Accesibilidad",
             "PIN extra al acceder a Accesibilidad (aunque Ajustes esté desbloqueado)"),
+    SysItem(AppBlockManager.SYS_DEVICE_ADMIN,  "🛡️",  "Administración del dispositivo",
+            "PIN extra para desactivar el admin (impide desinstalación)"),
     SysItem(AppBlockManager.SYS_VPN,           "🔒", "Configuración VPN",
             "PIN extra para la sección VPN dentro de Ajustes"),
     SysItem(AppBlockManager.SYS_DNS,           "🌐", "DNS Privado",
