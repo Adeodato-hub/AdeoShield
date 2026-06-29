@@ -17,7 +17,7 @@ class GuardianAccessibilityService : AccessibilityService() {
     private val settingsPackages = setOf(
         "com.android.settings",
         "com.samsung.android.settings",
-        "com.samsung.accessibility",          // app principal de Accesibilidad en Samsung
+        "com.samsung.accessibility",
         "com.google.android.packageinstaller",
         "com.android.packageinstaller"
     )
@@ -29,14 +29,16 @@ class GuardianAccessibilityService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
     private var pinAbierto = false
     private var adbObserver: ContentObserver? = null
-    // Clave de la última página crítica para la que se mostró PIN.
-    // Evita que eventos repetidos de la misma página revoquen la gracia
-    // recién concedida y provoquen un bucle infinito de PIN.
-    private var lastCriticalPageKey = ""
+
+    // Tipo semántico de la última página crítica desbloqueada con PIN
+    // ("accessibility", "vpn", "dns", "dev", "admin", o "").
+    // Usar el tipo —no la clase ni el texto— garantiza estabilidad aunque
+    // Samsung dispare eventos con pageText vacío o distinto en la misma página.
+    private var lastCriticalType = ""
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        lastCriticalPageKey = ""
+        lastCriticalType = ""
         registrarObservadorAdb()
     }
 
@@ -45,8 +47,6 @@ class GuardianAccessibilityService : AccessibilityService() {
         adbObserver?.let { contentResolver.unregisterContentObserver(it) }
     }
 
-    // Segunda línea de defensa: si ADB se activa por cualquier vía (incluso
-    // sin pasar por la UI de Opciones de Desarrollador), se exige PIN.
     private fun registrarObservadorAdb() {
         val obs = object : ContentObserver(handler) {
             override fun onChange(selfChange: Boolean) {
@@ -59,16 +59,7 @@ class GuardianAccessibilityService : AccessibilityService() {
                     GuardState.lockNow()
                     if (!pinAbierto) {
                         pinAbierto = true
-                        startActivity(Intent(this@GuardianAccessibilityService, PinActivity::class.java).apply {
-                            putExtra(PinActivity.EXTRA_MODE, PinActivity.MODE_VERIFY)
-                            putExtra(PinActivity.EXTRA_REASON, PinActivity.REASON_SETTINGS_GUARD)
-                            addFlags(
-                                Intent.FLAG_ACTIVITY_NEW_TASK or
-                                Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                                Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                                Intent.FLAG_ACTIVITY_NO_ANIMATION
-                            )
-                        })
+                        lanzarPin()
                         handler.postDelayed({ pinAbierto = false }, 1200)
                     }
                 }
@@ -93,36 +84,37 @@ class GuardianAccessibilityService : AccessibilityService() {
         val esLanzador = launcherHints.any { pkg.contains(it, true) }
         val esAjustes  = pkg in settingsPackages || pkg.contains("settings", true)
         val esAppBloqueada = pkg in blocked
-
         val pageText = event.text?.joinToString(" ")?.lowercase() ?: ""
 
-        // Clave única por página: diferencia p.ej. VPN de DNS aunque ambas usen
-        // la misma Activity genérica (subsettings) en Samsung.
-        val pageKey = "$pkg/$className/$pageText"
+        if (esLanzador) { lastCriticalType = ""; GuardState.lockNow(); return }
 
-        if (esLanzador) { lastCriticalPageKey = ""; GuardState.lockNow(); return }
-
-        val paginaCriticaBloqueada = esAjustes && paginaCriticaBloqueada(className, pageText, blocked)
+        // tipoCrit: tipo semántico si esta página es crítica y está habilitada,
+        // null si no aplica bloqueo de página crítica.
+        val tipoCrit = if (esAjustes) tipoCritico(className, pageText, blocked) else null
+        val paginaCriticaBloqueada = tipoCrit != null
         val ajustesBloqueados = esAjustes && AppBlockManager.SYS_SETTINGS in blocked
 
         if (!esAppBloqueada && !ajustesBloqueados && !paginaCriticaBloqueada) return
-
         if (!PinManager.isPinSet(this)) return
 
         if (paginaCriticaBloqueada) {
-            // Revocar gracia solo si es una página distinta a la que se acaba de
-            // desbloquear, o si la gracia ya expiró. Evita el bucle donde eventos
-            // repetidos de la misma página cancelan el PIN recién concedido.
-            val mismaPageConGracia = pageKey == lastCriticalPageKey && GuardState.isUnlocked()
-            if (!mismaPageConGracia) GuardState.lockNow()
+            // Revocar gracia solo si el tipo de página es distinto al que acabamos
+            // de desbloquear, o si la gracia ya expiró. Esto evita el bucle donde
+            // eventos repetidos de la misma página revocan el PIN recién concedido.
+            val mismoTipoConGracia = tipoCrit == lastCriticalType && GuardState.isUnlocked()
+            if (!mismoTipoConGracia) GuardState.lockNow()
         }
 
         if (GuardState.isUnlocked()) { pinAbierto = false; return }
-
         if (pinAbierto) return
-        pinAbierto = true
-        if (paginaCriticaBloqueada) lastCriticalPageKey = pageKey
 
+        pinAbierto = true
+        if (paginaCriticaBloqueada) lastCriticalType = tipoCrit!!
+        lanzarPin()
+        handler.postDelayed({ pinAbierto = false }, 1200)
+    }
+
+    private fun lanzarPin() {
         startActivity(Intent(this, PinActivity::class.java).apply {
             putExtra(PinActivity.EXTRA_MODE, PinActivity.MODE_VERIFY)
             putExtra(PinActivity.EXTRA_REASON, PinActivity.REASON_SETTINGS_GUARD)
@@ -133,23 +125,22 @@ class GuardianAccessibilityService : AccessibilityService() {
                 Intent.FLAG_ACTIVITY_NO_ANIMATION
             )
         })
-        handler.postDelayed({ pinAbierto = false }, 1200)
     }
 
-    private fun paginaCriticaBloqueada(className: String, pageText: String, blocked: Set<String>): Boolean {
+    // Devuelve el tipo semántico de la página si está habilitada como crítica,
+    // o null si no aplica. El tipo es estable (no depende de texto ni clase exacta).
+    private fun tipoCritico(className: String, pageText: String, blocked: Set<String>): String? {
         val isAccessibility = className.contains("accessibility") ||
                               pageText.contains("accesib") ||
-                              pageText.contains("accessibility") ||
                               pageText.contains("servicios instalados") ||
                               pageText.contains("installed services")
         val isVpn  = className.contains("vpn") || pageText == "vpn"
         val isDns  = className.contains("privatednssettings") || className.contains("privatedns") ||
                      pageText.contains("dns privado") || pageText.contains("private dns")
-        // Primera línea: bloquea la página principal Y sub-páginas (depuración USB,
-        // depuración inalámbrica, ADB Wi-Fi) por className y por título en español/inglés.
         val isDev  = className.contains("developeroptionsdashboard") ||
                      className.contains("developersettings") ||
                      className.contains("developmentoptions") ||
+                     className.contains("development") ||
                      className.contains("wirelessdebugging") ||
                      className.contains("adbwifi") ||
                      pageText.contains("opciones de desarrollador") ||
@@ -162,12 +153,12 @@ class GuardianAccessibilityService : AccessibilityService() {
                       (pageText.contains("administra") && pageText.contains("dispositivo")) ||
                       className.contains("uninstall")
         return when {
-            isAccessibility -> AppBlockManager.SYS_ACCESSIBILITY in blocked
-            isVpn           -> AppBlockManager.SYS_VPN           in blocked
-            isDns           -> AppBlockManager.SYS_DNS           in blocked
-            isDev           -> AppBlockManager.SYS_DEV_OPTIONS   in blocked
-            isAdmin         -> AppBlockManager.SYS_DEVICE_ADMIN  in blocked
-            else            -> false
+            isAccessibility && AppBlockManager.SYS_ACCESSIBILITY in blocked -> "accessibility"
+            isVpn           && AppBlockManager.SYS_VPN           in blocked -> "vpn"
+            isDns           && AppBlockManager.SYS_DNS           in blocked -> "dns"
+            isDev           && AppBlockManager.SYS_DEV_OPTIONS   in blocked -> "dev"
+            isAdmin         && AppBlockManager.SYS_DEVICE_ADMIN  in blocked -> "admin"
+            else -> null
         }
     }
 
