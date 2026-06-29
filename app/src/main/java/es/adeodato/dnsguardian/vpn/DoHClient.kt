@@ -11,21 +11,16 @@ import java.net.InetAddress
 import java.util.concurrent.TimeUnit
 
 /**
- * Cliente DNS-over-HTTPS (RFC 8484).
- *
- * Orden de providers:
- *   1. AdGuard Family DNS  (94.140.14.15 / 94.140.15.16)
- *   2. CleanBrowsing Family (185.228.168.168 / 185.228.169.168)
- *   3. Cloudflare for Families (1.1.1.3 / 1.0.0.3)
- *
- * HardcodedDns impide que OkHttp use el resolver del sistema (que apuntaría
- * a nuestra propia VPN) para resolver los hostnames de los endpoints DoH.
+ * Cliente DNS-over-HTTPS (RFC 8484) con fallback entre providers.
+ * Usa IPs hardcodeadas para resolver los endpoints y evitar recursión
+ * contra nuestra propia VPN. Los sockets salen por la red física gracias
+ * a ProtectedSocketFactory.
  */
 class DoHClient(private val vpnService: VpnService) {
 
     companion object {
         const val TAG = "DoHClient"
-        private const val TIMEOUT  = 10L         // segundos por intento (DoH en frío puede tardar)
+        private const val TIMEOUT = 10L
         private val DNS_MEDIA_TYPE = "application/dns-message".toMediaType()
 
         private data class Provider(val url: String, val host: String, val ips: List<String>)
@@ -50,8 +45,6 @@ class DoHClient(private val vpnService: VpnService) {
     }
 
     private val client: OkHttpClient = OkHttpClient.Builder()
-        // protect() garantiza que estas conexiones salen por la red física,
-        // no por el TUN — rompe el posible bucle circular en Samsung / One UI.
         .socketFactory(ProtectedSocketFactory(vpnService))
         .dns(HardcodedDns())
         .connectTimeout(TIMEOUT, TimeUnit.SECONDS)
@@ -60,22 +53,12 @@ class DoHClient(private val vpnService: VpnService) {
         .retryOnConnectionFailure(false)
         .build()
 
-    /**
-     * Envía [dnsWirePayload] al primer provider disponible.
-     * Devuelve la respuesta en wire-format, o null si todos fallan.
-     */
     fun query(dnsWirePayload: ByteArray): ByteArray? {
-        Log.d(TAG, "query() payload=${dnsWirePayload.size}B — probando ${PROVIDERS.size} providers")
-        for ((index, provider) in PROVIDERS.withIndex()) {
-            Log.d(TAG, "  Provider ${index + 1}/${PROVIDERS.size}: ${provider.host}")
+        for (provider in PROVIDERS) {
             val result = doQuery(provider, dnsWirePayload)
-            if (result != null) {
-                Log.d(TAG, "  ✓ Éxito con ${provider.host}: respuesta ${result.size}B")
-                return result
-            }
-            Log.w(TAG, "  ✗ ${provider.host} falló, probando siguiente…")
+            if (result != null) return result
         }
-        Log.e(TAG, "TODOS los providers DoH fallaron.")
+        Log.e(TAG, "All DoH providers failed")
         return null
     }
 
@@ -87,67 +70,25 @@ class DoHClient(private val vpnService: VpnService) {
             .build()
 
         return try {
-            Log.d(TAG, "    Abriendo conexión a ${provider.url}…")
-            val t0 = System.currentTimeMillis()
-
             client.newCall(request).execute().use { resp ->
-                val ms = System.currentTimeMillis() - t0
-                Log.d(TAG, "    HTTP ${resp.code} en ${ms}ms, Content-Type=${resp.header("Content-Type")}")
-
-                if (!resp.isSuccessful) {
-                    Log.w(TAG, "    HTTP ${resp.code} — no exitoso")
-                    return null
-                }
+                if (!resp.isSuccessful) return null
                 val bytes = resp.body?.bytes()
-                if (bytes == null || bytes.isEmpty()) {
-                    Log.w(TAG, "    Body nulo o vacío")
-                    return null
-                }
-                Log.d(TAG, "    Body: ${bytes.size}B ✓")
-                bytes
+                if (bytes.isNullOrEmpty()) null else bytes
             }
-        } catch (e: java.net.UnknownHostException) {
-            Log.e(TAG, "    UnknownHostException: ${e.message} " +
-                       "— ¿el HardcodedDns está devolviendo las IPs correctas?")
-            null
-        } catch (e: java.net.ConnectException) {
-            Log.e(TAG, "    ConnectException: ${e.message} " +
-                       "— ¿la IP de AdGuard es alcanzable desde la red del J6?")
-            null
-        } catch (e: java.net.SocketTimeoutException) {
-            Log.e(TAG, "    SocketTimeoutException (${TIMEOUT}s agotado): ${e.message}")
-            null
-        } catch (e: javax.net.ssl.SSLException) {
-            Log.e(TAG, "    SSLException: ${e.message}")
-            null
         } catch (e: Exception) {
-            Log.e(TAG, "    Excepción inesperada (${e.javaClass.simpleName}): ${e.message}", e)
+            Log.w(TAG, "${provider.host}: ${e.javaClass.simpleName}: ${e.message}")
             null
         }
     }
 
-    // Resuelve los hostnames de los endpoints directamente con IPs hardcodeadas;
-    // así OkHttp no usa el DNS del sistema (que apuntaría a nuestra propia VPN).
     private class HardcodedDns : Dns {
         private val table: Map<String, List<InetAddress>> = buildMap {
-            for (p in PROVIDERS) {
-                val addrs = p.ips.map { ip ->
-                    InetAddress.getByName(ip).also {
-                        Log.d(TAG, "HardcodedDns: ${p.host} → $ip")
-                    }
-                }
-                put(p.host, addrs)
-            }
+            for (p in PROVIDERS) put(p.host, p.ips.map { InetAddress.getByName(it) })
         }
-        override fun lookup(hostname: String): List<InetAddress> {
-            val known = table[hostname]
-            return if (known != null) {
-                Log.d(TAG, "HardcodedDns lookup('$hostname') → ${known.map { it.hostAddress }}")
-                known
-            } else {
-                Log.w(TAG, "HardcodedDns lookup('$hostname') → delegando al DNS del sistema ⚠️")
-                Dns.SYSTEM.lookup(hostname)
+
+        override fun lookup(hostname: String): List<InetAddress> =
+            table[hostname] ?: Dns.SYSTEM.lookup(hostname).also {
+                Log.w(TAG, "HardcodedDns: unknown host '$hostname', falling back to system DNS")
             }
-        }
     }
 }
