@@ -75,7 +75,7 @@ class DnsVpnService : VpnService() {
         Log.i(TAG, "startTunnel")
         try {
             val builder = Builder()
-                .setSession("DNSGuardian")
+                .setSession("AdeoShield")
                 .addAddress("10.0.0.2", 32)
                 .addDnsServer("10.0.0.1")
 
@@ -177,7 +177,7 @@ class DnsVpnService : VpnService() {
     // ── Notificación ─────────────────────────────────────────────────────────
 
     private fun createNotificationChannel() {
-        val ch = NotificationChannel(CHANNEL_ID, "DNS Guardian", NotificationManager.IMPORTANCE_LOW)
+        val ch = NotificationChannel(CHANNEL_ID, "AdeoShield", NotificationManager.IMPORTANCE_LOW)
         ch.description = "Filtro DNS familiar activo"
         getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
     }

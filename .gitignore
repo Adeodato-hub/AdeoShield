@@ -16,10 +16,14 @@ captures/
 .cxx/
 local.properties
 
-# Keystore (nunca versionar claves de firma)
+# Keystore y propiedades de firma (nunca versionar)
 *.jks
 *.keystore
+keystore.properties
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Documentación interna (no publicar)
+info-informe.txt
