@@ -16,6 +16,7 @@ El proyecto nace como una herramienta real para proteger a una familia, y como p
 - **Protección por PIN:** el acceso a la app está protegido por un PIN derivado con `PBKDF2WithHmacSHA256` (120.000 iteraciones, *salt* aleatorio por instalación). El PIN no se almacena en claro en ningún momento. Bloqueo temporal tras varios intentos fallidos.
 - **Bloqueo de ajustes sensibles:** un servicio de Accesibilidad detecta e impide el acceso a las pantallas del sistema que permitirían desactivar la protección (Accesibilidad, VPN, DNS privado, administradores de dispositivo, opciones de desarrollador).
 - **Protecciones configurables:** conjunto de protecciones activables de forma granular. Cinco protecciones vienen activas por defecto; el bloqueo de "Ajustes del sistema" se ofrece como opción avanzada desactivada por defecto, por su mayor impacto en la usabilidad.
+- **Bloqueo de aplicaciones por PIN:** el adulto responsable selecciona, de la lista de aplicaciones instaladas, cuáles quiere proteger. Cuando alguien intenta abrir una app bloqueada, AdeoShield intercepta la apertura y solicita el PIN antes de permitir el acceso. El control de las apps bloqueadas queda así protegido por la misma autenticación que el resto de la configuración.
 - **Detección de DNS privado del sistema:** la app detecta cuando el DNS privado (DoT) del sistema operativo podría interceptar las consultas antes de que entren en el túnel, y avisa de la situación.
 
 ---
@@ -29,7 +30,7 @@ El proyecto nace como una herramienta real para proteger a una familia, y como p
 | Filtrado de red | `VpnService` (túnel local) + DNS-over-HTTPS |
 | DNS upstream | AdGuard Family DNS |
 | Criptografía del PIN | PBKDF2WithHmacSHA256 (120.000 iteraciones) |
-| Bloqueo de ajustes | `AccessibilityService` |
+| Bloqueo de ajustes y apps | `AccessibilityService` |
 
 ---
 
@@ -38,7 +39,7 @@ El proyecto nace como una herramienta real para proteger a una familia, y como p
 AdeoShield combina varias capas para dificultar la elusión del filtrado:
 
 1. **Capa de resolución.** El `VpnService` captura las consultas DNS del dispositivo y las reenvía cifradas (DoH) a un resolutor con filtrado familiar. El contenido no deseado nunca llega a resolverse.
-2. **Capa de persistencia.** El servicio de Accesibilidad vigila las pantallas de ajustes que permitirían apagar la VPN, el servicio de accesibilidad o cambiar el DNS, y las bloquea o las protege con PIN.
+2. **Capa de persistencia.** El servicio de Accesibilidad vigila las pantallas de ajustes que permitirían apagar la VPN, el servicio de accesibilidad o cambiar el DNS, y las bloquea o las protege con PIN. El mismo servicio intercepta la apertura de las aplicaciones que el adulto haya marcado como bloqueadas y exige el PIN para acceder a ellas.
 3. **Capa de autenticación.** El PIN, derivado con PBKDF2, protege la configuración de la propia app frente a cambios no autorizados.
 
 Esta defensa en profundidad parte de una premisa honesta: en un dispositivo que el usuario controla físicamente, ninguna protección a nivel de app es absoluta. El objetivo es **elevar el coste y la dificultad** de eludirla, no afirmar que sea imposible.
@@ -94,11 +95,12 @@ AdeoShield is a native Android parental-control app built in Kotlin and Jetpack 
 - **PIN protection:** app access is protected by a PIN derived with `PBKDF2WithHmacSHA256` (120,000 iterations, per-install random salt). The PIN is never stored in plaintext.
 - **Sensitive settings lockdown:** an Accessibility service detects and blocks access to system screens that could be used to disable the protection (Accessibility, VPN, Private DNS, device admin, developer options).
 - **Configurable protections:** five protections enabled by default; the "System settings" lockdown is offered as an advanced, off-by-default option.
+- **PIN-gated app blocking:** the parent selects, from the list of installed applications, which ones to protect. When someone tries to open a blocked app, AdeoShield intercepts the launch and requires the PIN before granting access.
 - **System Private DNS detection:** the app detects when the OS-level private DNS (DoT) could intercept queries before they enter the tunnel, and warns the user.
 
 ## Tech stack
 
-Kotlin · Jetpack Compose · `VpnService` + DNS-over-HTTPS · AdGuard Family DNS · PBKDF2WithHmacSHA256 · `AccessibilityService`
+Kotlin · Jetpack Compose · `VpnService` + DNS-over-HTTPS · AdGuard Family DNS · PBKDF2WithHmacSHA256 · `AccessibilityService` (settings & app lockdown)
 
 ## Known limitations
 
