@@ -10,6 +10,16 @@ El proyecto nace como una herramienta real para proteger a una familia, y como p
 
 ---
 
+## Capturas
+
+<p align="center">
+  <img src="docs/pantalla-principal.jpg" width="250" alt="Pantalla principal de AdeoShield" />
+  <img src="docs/bloqueo-acceso.jpg" width="250" alt="Bloqueo de acceso y protecciones del sistema" />
+  <img src="docs/pin-parental.jpg" width="250" alt="Pantalla de PIN parental" />
+</p>
+
+---
+
 ## Características principales
 
 - **Filtrado DNS-over-HTTPS (DoH):** todo el tráfico DNS del dispositivo se canaliza mediante un `VpnService` local y se resuelve de forma cifrada contra AdGuard Family DNS, que bloquea contenido adulto y sitios maliciosos a nivel de resolución de nombres.
