@@ -208,7 +208,7 @@ fun GuardianScreen(
                 Text(
                     text  = "Tienes DNS Privado configurado con un proveedor externo. " +
                             "Esto hace que el filtro DNS quede completamente inactivo: " +
-                            "las consultas nunca pasan por DNSGuardian.\n\n" +
+                            "las consultas nunca pasan por AdeoShield.\n\n" +
                             "Ve a Ajustes → Conexiones → Más ajustes de conexión → " +
                             "DNS Privado y ponlo en \"Desactivado\".",
                     color = Color(0xFFB9C7D1)
@@ -245,7 +245,7 @@ fun GuardianScreen(
         Text(text = if (todo) "🛡️" else "⚠️", fontSize = 64.sp)
         Spacer(Modifier.height(8.dp))
         Text(
-            text       = "DNS GUARDIAN",
+            text       = "AdeoShield",
             color      = Color.White,
             fontSize   = 26.sp,
             fontWeight = FontWeight.Bold
@@ -343,7 +343,7 @@ fun GuardianScreen(
         ) {
             Text(
                 text     = "⚡ Samsung: ve a Ajustes → Mantenimiento dispositivo → Batería → " +
-                           "Gestión energía apps → DNSGuardian → Sin restricciones.\n" +
+                           "Gestión energía apps → AdeoShield → Sin restricciones.\n" +
                            "Esto evita que One UI mate el filtro en segundo plano.",
                 color    = Color(0xFFB9C7D1),
                 fontSize = 12.sp,

@@ -314,22 +314,45 @@ private fun AppRow(app: AppInfo, isBlocked: Boolean, onToggle: () -> Unit) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-private fun loadUserApps(pm: PackageManager, ownPackage: String): List<AppInfo> =
-    pm.getInstalledApplications(PackageManager.GET_META_DATA)
-        .filter { info ->
-            info.flags and ApplicationInfo.FLAG_SYSTEM == 0 &&
-            info.packageName != ownPackage
+@Suppress("DEPRECATION")
+private fun loadUserApps(pm: PackageManager, ownPackage: String): List<AppInfo> {
+    // Intentos en orden: el primero que devuelva algo gana
+    val candidates: List<String> = run {
+        // 1. Launcher intent con MATCH_ALL
+        val launcherIntent = android.content.Intent(android.content.Intent.ACTION_MAIN).also {
+            it.addCategory(android.content.Intent.CATEGORY_LAUNCHER)
         }
-        .mapNotNull { info ->
-            try {
-                AppInfo(
-                    packageName = info.packageName,
-                    label       = pm.getApplicationLabel(info).toString(),
-                    icon        = pm.getApplicationIcon(info.packageName).toBitmap().asImageBitmap()
-                )
-            } catch (e: Exception) { null }
-        }
-        .sortedBy { it.label.lowercase() }
+        val fromLauncher = pm.queryIntentActivities(launcherIntent, PackageManager.MATCH_ALL)
+            .map { it.activityInfo.packageName }
+            .distinct()
+        if (fromLauncher.isNotEmpty()) return@run fromLauncher
+
+        // 2. getInstalledApplications sin filtros de sistema
+        val fromInstalled = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+            .map { it.packageName }
+        if (fromInstalled.isNotEmpty()) return@run fromInstalled
+
+        // 3. getInstalledPackages como último recurso
+        pm.getInstalledPackages(0).map { it.packageName }
+    }.filter { it != ownPackage }
+
+    return candidates.mapNotNull { pkg ->
+        val info = runCatching { pm.getApplicationInfo(pkg, 0) }.getOrNull() ?: return@mapNotNull null
+        val isSystem  = info.flags and ApplicationInfo.FLAG_SYSTEM != 0
+        val hasLaunch = runCatching { pm.getLaunchIntentForPackage(pkg) }.getOrNull() != null
+        if (isSystem && !hasLaunch) return@mapNotNull null
+        val label = runCatching { pm.getApplicationLabel(info).toString() }.getOrDefault(pkg)
+        val icon  = runCatching { pm.getApplicationIcon(pkg).toBitmap().asImageBitmap() }
+                        .getOrElse { fallbackIcon() }
+        AppInfo(packageName = pkg, label = label, icon = icon)
+    }.sortedBy { it.label.lowercase() }
+}
+
+private fun fallbackIcon(): ImageBitmap {
+    val bmp = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888)
+    Canvas(bmp).drawColor(android.graphics.Color.DKGRAY)
+    return bmp.asImageBitmap()
+}
 
 private fun Drawable.toBitmap(): Bitmap {
     if (this is BitmapDrawable && bitmap != null) return bitmap

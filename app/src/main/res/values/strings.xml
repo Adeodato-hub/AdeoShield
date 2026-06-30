@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">DNS Guardian</string>
+    <string name="app_name">AdeoShield</string>
 
     <!-- PIN parental -->
     <string name="pin_setup_title">Crea el PIN parental</string>
@@ -11,6 +11,6 @@
     <string name="pin_mismatch">Los PIN no coinciden</string>
 
     <!-- Servicio de Accesibilidad -->
-    <string name="accessibility_service_label">DNS Guardian — Proteccion de Ajustes</string>
-    <string name="accessibility_description">DNS Guardian usa este servicio para proteger la configuracion del dispositivo con el PIN parental: detecta cuando se abren pantallas protegidas y solicita el PIN antes de permitir cambios. No recopila ni envia datos personales.</string>
+    <string name="accessibility_service_label">AdeoShield — Proteccion de Ajustes</string>
+    <string name="accessibility_description">AdeoShield usa este servicio para proteger la configuracion del dispositivo con el PIN parental: detecta cuando se abren pantallas protegidas y solicita el PIN antes de permitir cambios. No recopila ni envia datos personales.</string>
 </resources>
