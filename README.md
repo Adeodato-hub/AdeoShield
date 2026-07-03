@@ -1,5 +1,9 @@
 # AdeoShield
 
+<p align="center">
+  <img src="docs/icono.jpg" width="120" alt="Icono de AdeoShield" />
+</p>
+
 **Control parental para Android basado en filtrado DNS-over-HTTPS, con bloqueo de ajustes y protección por PIN.**
 
 AdeoShield es una aplicación de control parental para Android, desarrollada de forma nativa en Kotlin y Jetpack Compose. Filtra el tráfico de red del dispositivo a través de DNS-over-HTTPS (DoH) contra los servidores de AdGuard Family DNS, e impide que el contenido filtrado se desactive fácilmente mediante un sistema de protección por PIN y bloqueo de las pantallas de configuración sensibles del sistema.
@@ -12,11 +16,22 @@ El proyecto nace como una herramienta real para proteger a una familia, y como p
 
 ## Capturas
 
-<p align="center">
-  <img src="docs/pantalla-principal.jpg" width="250" alt="Pantalla principal de AdeoShield" />
-  <img src="docs/bloqueo-acceso.jpg" width="250" alt="Bloqueo de acceso y protecciones del sistema" />
-  <img src="docs/pin-parental.jpg" width="250" alt="Pantalla de PIN parental" />
-</p>
+<table align="center">
+  <tr>
+    <td align="center" width="33%">
+      <img src="docs/pantalla-principal.jpg" width="250" alt="Pantalla principal de AdeoShield" /><br/>
+      <sub><strong>Pantalla principal</strong></sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="docs/bloqueo-acceso.jpg" width="250" alt="Bloqueo de acceso y protecciones del sistema" /><br/>
+      <sub><strong>Bloqueo de acceso</strong></sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="docs/pin-parental.jpg" width="250" alt="Pantalla de PIN parental" /><br/>
+      <sub><strong>PIN parental</strong></sub>
+    </td>
+  </tr>
+</table>
 
 ---
 
@@ -93,11 +108,34 @@ Analista de ciberseguridad (Blue Team / SOC), con trayectoria previa en el secto
 
 # AdeoShield (English)
 
+<p align="center">
+  <img src="docs/icono.jpg" width="120" alt="AdeoShield icon" />
+</p>
+
 **Android parental control based on DNS-over-HTTPS filtering, with settings lockdown and PIN protection.**
 
 AdeoShield is a native Android parental-control app built in Kotlin and Jetpack Compose. It filters the device's network traffic through DNS-over-HTTPS (DoH) against AdGuard Family DNS, and prevents the filtering from being easily disabled through a PIN-protection system and lockdown of sensitive system settings screens.
 
 > **Scope note:** AdeoShield is a personal and educational project, not a commercial product or a foolproof security solution. Like any on-device parental control, it is bound by the limitations of the Android platform. Its goal is to significantly raise the difficulty of bypassing the filter, not to guarantee the impossible.
+
+## Screenshots
+
+<table align="center">
+  <tr>
+    <td align="center" width="33%">
+      <img src="docs/pantalla-principal.jpg" width="250" alt="AdeoShield main screen" /><br/>
+      <sub><strong>Main screen</strong></sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="docs/bloqueo-acceso.jpg" width="250" alt="System settings lockdown" /><br/>
+      <sub><strong>Settings lockdown</strong></sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="docs/pin-parental.jpg" width="250" alt="Parental PIN screen" /><br/>
+      <sub><strong>Parental PIN</strong></sub>
+    </td>
+  </tr>
+</table>
 
 ## Key features
 
