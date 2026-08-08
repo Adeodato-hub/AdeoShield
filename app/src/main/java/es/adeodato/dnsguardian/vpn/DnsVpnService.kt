@@ -8,7 +8,7 @@ import android.content.Intent
 import android.net.VpnService
 import android.os.ParcelFileDescriptor
 import android.util.Log
-import es.adeodato.dnsguardian.MainActivity
+import es.adeodato.dnsguardian.ui.PinGateActivity
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.concurrent.ExecutorService
@@ -183,8 +183,16 @@ class DnsVpnService : VpnService() {
     }
 
     private fun buildNotification(): Notification {
+        // Apunta a PinGateActivity, no a MainActivity: correccion adicional
+        // de defensa en profundidad (la principal es el gate en
+        // MainActivity.onResume() via GuardedActivity, que ya cubriria
+        // esto igualmente). FLAG_UPDATE_CURRENT es imprescindible aqui:
+        // sin el, un PendingIntent ya cacheado por el sistema con el mismo
+        // requestCode (0) desde una version anterior de la app seguiria
+        // apuntando a MainActivity aunque se recompile el codigo.
         val pi = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
+            this, 0, Intent(this, PinGateActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         return Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("Protección DNS activa")

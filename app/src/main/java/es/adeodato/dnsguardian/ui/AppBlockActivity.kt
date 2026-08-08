@@ -7,7 +7,6 @@ import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Image
@@ -87,7 +86,8 @@ data class AppInfo(
 
 // ── Activity ──────────────────────────────────────────────────────────────────
 
-class AppBlockActivity : ComponentActivity() {
+/** Exige sesion autenticada en cada onResume (ver GuardedActivity). */
+class AppBlockActivity : GuardedActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.VpnService
 import android.util.Log
+import es.adeodato.dnsguardian.security.AppSession
 import es.adeodato.dnsguardian.vpn.DnsVpnService
 
 /**
@@ -17,6 +18,13 @@ class BootReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+
+        // AppSession vive solo en memoria (nunca persiste), asi que un
+        // proceso nuevo tras reiniciar ya arranca sin sesion heredada.
+        // Se invalida aqui tambien de forma explicita: documenta el
+        // invariante en el propio codigo y protege ante un futuro cambio
+        // que anada persistencia a AppSession sin darse cuenta de esto.
+        AppSession.invalidate()
 
         // Solo podemos arrancar la VPN si el permiso ya está concedido.
         // Si prepare() devuelve null → permiso OK → iniciamos.

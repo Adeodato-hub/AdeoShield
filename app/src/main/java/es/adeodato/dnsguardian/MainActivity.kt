@@ -7,7 +7,6 @@ import android.content.Intent
 import android.net.VpnService
 import android.os.Bundle
 import android.provider.Settings
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -45,10 +44,16 @@ import androidx.compose.ui.unit.sp
 import es.adeodato.dnsguardian.security.AppBlockManager
 import es.adeodato.dnsguardian.security.PinManager
 import es.adeodato.dnsguardian.ui.AppBlockActivity
+import es.adeodato.dnsguardian.ui.GuardedActivity
 import es.adeodato.dnsguardian.ui.PinActivity
 import es.adeodato.dnsguardian.vpn.DnsVpnService
 
-class MainActivity : ComponentActivity() {
+/**
+ * Exige sesion autenticada en cada onResume (ver GuardedActivity) --
+ * cierra el bypass de PIN para cualquier entrada directa (notificacion
+ * VPN, "Apps recientes", futuros shortcuts/tiles/deep links).
+ */
+class MainActivity : GuardedActivity() {
 
     private var vpnGranted           by mutableStateOf(false)
     private var adminActive          by mutableStateOf(false)
