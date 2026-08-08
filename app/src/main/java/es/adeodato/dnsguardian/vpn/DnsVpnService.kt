@@ -6,8 +6,11 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
 import android.net.VpnService
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import es.adeodato.dnsguardian.security.AccessibilityWatchdog
 import es.adeodato.dnsguardian.ui.PinGateActivity
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -22,6 +25,13 @@ class DnsVpnService : VpnService() {
         const val CHANNEL_ID   = "dns_guardian_vpn"
         private const val NOTIF_ID = 2
         const val ACTION_STOP  = "es.adeodato.dnsguardian.STOP_VPN"
+
+        // Intervalo del sondeo de AccessibilityWatchdog -- fuente de verdad
+        // de la deteccion de "servicio de Accesibilidad desactivado".
+        // LIMITACION: solo corre mientras esta Activity/servicio (la VPN)
+        // esta viva -- ver comentario de la dependencia circular en
+        // AccessibilityWatchdog.kt.
+        private const val ACCESSIBILITY_CHECK_MS = 60_000L // 1 min
 
         // IPs cuyo tráfico se intercepta. Las IPs de los servidores DoH reales
         // (94.140.14.15 / 94.140.15.16) no están aquí para que salgan por la
@@ -40,6 +50,13 @@ class DnsVpnService : VpnService() {
     private val running  = AtomicBoolean(false)
     private val executor: ExecutorService = Executors.newCachedThreadPool()
     private lateinit var dohClient: DoHClient
+    private val handler = Handler(Looper.getMainLooper())
+    private val watchdogRunnable = object : Runnable {
+        override fun run() {
+            AccessibilityWatchdog.check(this@DnsVpnService)
+            handler.postDelayed(this, ACCESSIBILITY_CHECK_MS)
+        }
+    }
 
     // ── Ciclo de vida ─────────────────────────────────────────────────────────
 
@@ -47,6 +64,7 @@ class DnsVpnService : VpnService() {
         super.onCreate()
         dohClient = DoHClient(this)
         createNotificationChannel()
+        handler.post(watchdogRunnable)
         Log.i(TAG, "onCreate")
     }
 
@@ -64,6 +82,7 @@ class DnsVpnService : VpnService() {
 
     override fun onDestroy() {
         Log.i(TAG, "onDestroy")
+        handler.removeCallbacks(watchdogRunnable)
         shutdown()
         executor.shutdownNow()
         super.onDestroy()

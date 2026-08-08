@@ -55,6 +55,27 @@
             android:exported="false"
             android:excludeFromRecents="true" />
 
+        <!-- Activity separada (NO alias: activity-alias no admite
+             override de taskAffinity/launchMode) para el flujo
+             settings_guard, lanzado desde GuardianAccessibilityService
+             (un Service, no una Activity: FLAG_ACTIVITY_NEW_TASK es
+             obligatorio). Con taskAffinity y singleTask propios corre en
+             una tarea propia y aislada: si se lanzara PinActivity
+             (afinidad por defecto, compartida con MainActivity), NEW_TASK
+             reutilizaria la tarea de la app si ya estaba abierta en vez
+             de crear una nueva, dejando la pantalla de Ajustes que
+             disparo el guard enterrada en segundo plano: bucle, el PIN
+             te devolvia a AdeoShield en vez de dejarte en Ajustes.
+             Los otros dos caminos (GuardedActivity.pinLauncher,
+             MainActivity.openPinSetup) siguen usando PinActivity
+             directamente: no les afecta. -->
+        <activity
+            android:name=".ui.PinActivitySettingsGuard"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity="es.adeodato.dnsguardian.settingsguard"
+            android:launchMode="singleTask" />
+
         <!-- Gestión de apps bloqueadas por el padre -->
         <activity
             android:name=".ui.AppBlockActivity"

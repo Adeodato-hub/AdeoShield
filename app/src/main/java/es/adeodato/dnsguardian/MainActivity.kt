@@ -1,10 +1,13 @@
 package es.adeodato.dnsguardian
 
+import android.Manifest
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.VpnService
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.compose.setContent
@@ -41,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import es.adeodato.dnsguardian.security.AppBlockManager
 import es.adeodato.dnsguardian.security.PinManager
 import es.adeodato.dnsguardian.ui.AppBlockActivity
@@ -70,9 +74,16 @@ class MainActivity : GuardedActivity() {
         refreshStatus()
     }
 
+    // Sin este permiso (API 33+) la notificacion de AccessibilityWatchdog
+    // no se muestra nunca -- si se deniega, no hay fallback posible.
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* denegado: el watchdog seguira detectando, pero mudo */ }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        requestNotificationPermissionIfNeeded()
 
         if (VpnService.prepare(this) == null) startDnsVpn()
 
@@ -110,6 +121,19 @@ class MainActivity : GuardedActivity() {
 
     private fun startDnsVpn() {
         startForegroundService(Intent(this, DnsVpnService::class.java))
+    }
+
+    // Se pide una sola vez, en el primer arranque -- junto al resto de
+    // permisos/activaciones del onboarding (VPN, admin, PIN).
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        ) return
+        val prefs = getSharedPreferences(PREFS_ONBOARDING, Context.MODE_PRIVATE)
+        if (prefs.getBoolean(KEY_NOTIF_ASKED, false)) return
+        prefs.edit().putBoolean(KEY_NOTIF_ASKED, true).apply()
+        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     private fun requestAdmin() {
@@ -157,6 +181,11 @@ class MainActivity : GuardedActivity() {
         blockedCount   = AppBlockManager.getBlocked(this).count { !it.startsWith("_sys_") }
         val enabledServices = Settings.Secure.getString(contentResolver, "enabled_accessibility_services") ?: ""
         accessibilityActive = enabledServices.contains(packageName, ignoreCase = true)
+    }
+
+    private companion object {
+        private const val PREFS_ONBOARDING = "guardian_onboarding"
+        private const val KEY_NOTIF_ASKED = "notif_permission_asked"
     }
 }
 

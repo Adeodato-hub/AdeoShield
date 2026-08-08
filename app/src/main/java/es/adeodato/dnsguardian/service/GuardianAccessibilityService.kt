@@ -7,10 +7,12 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
+import es.adeodato.dnsguardian.R
+import es.adeodato.dnsguardian.security.AccessibilityWatchdog
 import es.adeodato.dnsguardian.security.AppBlockManager
 import es.adeodato.dnsguardian.security.GuardState
 import es.adeodato.dnsguardian.security.PinManager
-import es.adeodato.dnsguardian.ui.PinActivity
+import es.adeodato.dnsguardian.ui.PinActivitySettingsGuard
 
 class GuardianAccessibilityService : AccessibilityService() {
 
@@ -40,11 +42,24 @@ class GuardianAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         lastCriticalType = ""
         registrarObservadorAdb()
+        // El sondeo periodico de DnsVpnService es la fuente de verdad;
+        // esto solo adelanta la cancelacion del aviso si ya estaba activo.
+        AccessibilityWatchdog.check(this)
     }
 
     override fun onDestroy() {
         super.onDestroy()
         adbObserver?.let { contentResolver.unregisterContentObserver(it) }
+    }
+
+    // Best-effort: corre justo al desligarse el servicio (p.ej. al apagar
+    // el toggle en Ajustes), pero el proceso puede morir antes de que la
+    // notificacion llegue a mostrarse. La fuente de verdad real es el
+    // sondeo periodico de AccessibilityWatchdog.check() desde
+    // DnsVpnService, que no depende de que este codigo llegue a correr.
+    override fun onUnbind(intent: Intent?): Boolean {
+        AccessibilityWatchdog.alertaInmediata(this)
+        return super.onUnbind(intent)
     }
 
     private fun registrarObservadorAdb() {
@@ -119,16 +134,20 @@ class GuardianAccessibilityService : AccessibilityService() {
     }
 
     private fun lanzarPin() {
-        startActivity(Intent(this, PinActivity::class.java).apply {
-            putExtra(PinActivity.EXTRA_MODE, PinActivity.MODE_VERIFY)
-            putExtra(PinActivity.EXTRA_REASON, PinActivity.REASON_SETTINGS_GUARD)
-            addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or
-                Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                Intent.FLAG_ACTIVITY_NO_ANIMATION
-            )
-        })
+        // PinActivitySettingsGuard, no PinActivity: clase separada con su
+        // propia tarea aislada (taskAffinity + singleTask en el manifest)
+        // para que finish() devuelva a Ajustes en vez de traer al frente
+        // la tarea de la app -- ver comentario alli.
+        startActivity(
+            Intent(this, PinActivitySettingsGuard::class.java).apply {
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_NO_ANIMATION
+                )
+            }
+        )
     }
 
     // Devuelve el tipo semántico de la página si está habilitada como crítica,
@@ -137,7 +156,14 @@ class GuardianAccessibilityService : AccessibilityService() {
         val isAccessibility = className.contains("accessibility") ||
                               pageText.contains("accesib") ||
                               pageText.contains("servicios instalados") ||
-                              pageText.contains("installed services")
+                              pageText.contains("installed services") ||
+                              // La pantalla-detalle de UN servicio concreto (donde esta
+                              // el switch real) suele vivir en un contenedor generico de
+                              // Ajustes sin "accessibility" en el className ni en el
+                              // titulo -- pero SIEMPRE muestra el label del servicio como
+                              // titulo, sea cual sea el contenedor o la ruta de navegacion
+                              // (lista o buscador de Ajustes directo al detalle).
+                              pageText.contains(getString(R.string.accessibility_service_label).lowercase())
         val isVpn  = className.contains("vpn") || pageText == "vpn"
         val isDns  = className.contains("privatednssettings") || className.contains("privatedns") ||
                      pageText.contains("dns privado") || pageText.contains("private dns")

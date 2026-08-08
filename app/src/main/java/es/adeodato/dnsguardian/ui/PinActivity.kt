@@ -38,10 +38,8 @@ class PinActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_MODE = "extra_mode"
-        const val EXTRA_REASON = "extra_reason"
         const val MODE_SETUP = "setup"
         const val MODE_VERIFY = "verify"
-        const val REASON_SETTINGS_GUARD = "settings_guard"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,17 +49,12 @@ class PinActivity : ComponentActivity() {
             WindowManager.LayoutParams.FLAG_SECURE
         )
 
-        val isSettingsGuard = intent.getStringExtra(EXTRA_REASON) == REASON_SETTINGS_GUARD
         val requestedSetup = intent.getStringExtra(EXTRA_MODE) == MODE_SETUP
         val pinExists = PinManager.isPinSet(this)
 
         setContent {
             MaterialTheme {
                 PinScaffold {
-                    if (isSettingsGuard) {
-                        BackHandler { goHome() }
-                    }
-
                     when {
                         requestedSetup && !pinExists -> {
                             PinSetupScreen(
@@ -93,13 +86,47 @@ class PinActivity : ComponentActivity() {
                                 title = "Protección activa",
                                 subtitle = "Introduce el PIN parental para continuar",
                                 onSuccess = {
-                                    if (isSettingsGuard) GuardState.grantAccess()
                                     setResult(Activity.RESULT_OK)
                                     finish()
                                 }
                             )
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Verificacion de PIN para el guard de pantallas criticas de Ajustes
+ * (ver GuardianAccessibilityService.lanzarPin()). Clase separada de
+ * PinActivity -- no un simple MODE_VERIFY mas -- porque necesita su
+ * propia tarea aislada (taskAffinity + singleTask en el manifest): ver
+ * el comentario alli sobre el bucle de reentrada que provocaba compartir
+ * tarea con MainActivity cuando la app ya estaba abierta.
+ */
+class PinActivitySettingsGuard : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE
+        )
+
+        setContent {
+            MaterialTheme {
+                PinScaffold {
+                    BackHandler { goHome() }
+                    PinVerifyScreen(
+                        title = "Protección activa",
+                        subtitle = "Introduce el PIN parental para continuar",
+                        onSuccess = {
+                            GuardState.grantAccess()
+                            setResult(Activity.RESULT_OK)
+                            finish()
+                        }
+                    )
                 }
             }
         }
