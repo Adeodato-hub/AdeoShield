@@ -201,8 +201,8 @@ private val Fondo   = Color(0xFF0E2A3B)
 private val Tarjeta = Color(0xFF163345)
 private val Acento  = Color(0xFF38BDF8)
 private val Verde   = Color(0xFF34D399)
-private val Ambar   = Color(0xFFFBBF24)
 private val Rojo    = Color(0xFFF87171)
+private val Neutro  = Color(0xFF7C93A8)
 
 // ── Pantalla principal ────────────────────────────────────────────────────────
 
@@ -224,7 +224,13 @@ fun GuardianScreen(
     onOpenAccessibility: () -> Unit
 ) {
     val privateDnsOk = privateDnsMode != "hostname"
-    val todo = vpnGranted && adminActive && pinSet && privateDnsOk && accessibilityActive
+    // Device admin queda FUERA del veredicto global: en algunos
+    // dispositivos (confirmado en un Galaxy A14, Android 15) el sistema
+    // no permite activarlo pese a Accesibilidad+VPN+PIN funcionando bien
+    // -- es refuerzo opcional, no la capa base de proteccion. El PIN via
+    // Accesibilidad ya protege tanto la desinstalacion como la propia
+    // pantalla de admin (ver GuardianAccessibilityService.tipoCritico).
+    val todo = vpnGranted && pinSet && privateDnsOk && accessibilityActive
 
     // Diálogo bloqueante: DNS privado con proveedor externo inutiliza el filtro
     if (showDnsWarning) {
@@ -287,7 +293,7 @@ fun GuardianScreen(
         Spacer(Modifier.height(4.dp))
         Text(
             text       = if (todo) "PROTECCIÓN COMPLETA" else "CONFIGURACIÓN PENDIENTE",
-            color      = if (todo) Verde else Ambar,
+            color      = if (todo) Verde else Rojo,
             fontSize   = 13.sp,
             fontWeight = FontWeight.SemiBold
         )
@@ -316,8 +322,7 @@ fun GuardianScreen(
             },
             ok         = privateDnsOk,
             label      = "Ajustar",
-            onAction   = onOpenDnsSettings,
-            errorColor = privateDnsMode == "hostname"
+            onAction   = onOpenDnsSettings
         )
 
         Spacer(Modifier.height(12.dp))
@@ -341,8 +346,7 @@ fun GuardianScreen(
                                  else "$blockedCount ${if (blockedCount == 1) "app bloqueada" else "apps bloqueadas"}",
             ok                 = true,
             label              = "Gestionar",
-            onAction           = onManageBlockedApps,
-            forceActiveButton  = true
+            onAction           = onManageBlockedApps
         )
 
         Spacer(Modifier.height(12.dp))
@@ -350,11 +354,12 @@ fun GuardianScreen(
         ProtectionCard(
             emoji    = "🛡️",
             title    = "Administrador del dispositivo",
-            desc     = if (adminActive) "Desinstalación bloqueada"
-                       else             "Sin esto la app puede borrarse",
+            desc     = if (adminActive) "Protección reforzada activa"
+                       else             "Opcional — algunos dispositivos no lo permiten",
             ok       = adminActive,
             label    = "Activar",
-            onAction = onActivateAdmin
+            onAction = onActivateAdmin,
+            neutral  = !adminActive
         )
 
         Spacer(Modifier.height(12.dp))
@@ -403,13 +408,19 @@ private fun ProtectionCard(
     ok: Boolean,
     label: String,
     onAction: () -> Unit,
-    errorColor: Boolean = false,
-    forceActiveButton: Boolean = false
+    // Para refuerzos opcionales (p.ej. device admin, que algunos
+    // dispositivos no permiten activar): ni "todo bien" ni "requiere
+    // atencion", solo informativo. No debe leerse como una alerta -- por
+    // eso nunca cae en el rojo por defecto de las capas universales.
+    neutral: Boolean = false
 ) {
+    // Capas universales (VPN, DNS, Accesibilidad, PIN): semaforo
+    // verde/rojo -- rojo significa "apagada pero accionable", una
+    // alarma real que el usuario puede resolver tocando la tarjeta.
     val indicador = when {
-        ok         -> Verde
-        errorColor -> Rojo
-        else       -> Ambar
+        ok      -> Verde
+        neutral -> Neutro
+        else    -> Rojo
     }
 
     Card(
@@ -442,7 +453,10 @@ private fun ProtectionCard(
                 Text(text = desc, color = Color(0xFFB9C7D1), fontSize = 12.sp)
             }
             Spacer(Modifier.width(8.dp))
-            val activeButton = !ok || forceActiveButton
+            // Boton azul SOLO en tarjetas rojas (alarma accionable) --
+            // verde y gris/neutro usan el boton en tono neutro, incluida
+            // "Apps bloqueadas" (antes forzada siempre en azul).
+            val activeButton = indicador == Rojo
             Button(
                 onClick  = onAction,
                 colors   = ButtonDefaults.buttonColors(

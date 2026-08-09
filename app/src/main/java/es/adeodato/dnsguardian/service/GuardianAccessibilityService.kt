@@ -1,12 +1,16 @@
 package es.adeodato.dnsguardian.service
 
 import android.accessibilityservice.AccessibilityService
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.database.ContentObserver
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
+import es.adeodato.dnsguardian.GuardianAdminReceiver
 import es.adeodato.dnsguardian.R
 import es.adeodato.dnsguardian.security.AccessibilityWatchdog
 import es.adeodato.dnsguardian.security.AppBlockManager
@@ -179,9 +183,26 @@ class GuardianAccessibilityService : AccessibilityService() {
                      pageText.contains("depuración inalámbrica") ||
                      pageText.contains("usb debugging") ||
                      pageText.contains("wireless debugging")
-        val isAdmin = className.contains("deviceadmin") || className.contains("device_admin") ||
-                      (pageText.contains("administra") && pageText.contains("dispositivo")) ||
-                      className.contains("uninstall")
+        // Pantallas de admin: PIN solo si el admin YA esta activo (entonces
+        // hay algo que desactivar -- la amenaza real). Mientras no lo este,
+        // conceder no es amenaza y todo el asistente (dialogo de explicacion
+        // + SecDeviceAdminAdd) pasa sin PIN -- sin depender de className
+        // especifico de cada pantalla del asistente (fragil, distinto por
+        // OEM/version) ni de ninguna ventana de tiempo. "uninstall" queda
+        // SIEMPRE protegido, pase lo que pase con el admin.
+        val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val adminActivo = dpm.isAdminActive(ComponentName(this, GuardianAdminReceiver::class.java))
+        // El dialogo de confirmar desinstalar se renderiza como
+        // "android.app.AlertDialog" generico (sin "uninstall" en el
+        // className) -- exige el className generico Y el texto, para no
+        // disparar con cualquier pantalla que mencione "desinstalar" de
+        // pasada (p.ej. una ficha de Play Store).
+        val isUninstall = className.contains("uninstall") ||
+                          (className.contains("alertdialog") &&
+                           (pageText.contains("desinstalar") || pageText.contains("uninstall")))
+        val adminScreen = className.contains("deviceadmin") || className.contains("device_admin") ||
+                          (pageText.contains("administra") && pageText.contains("dispositivo"))
+        val isAdmin = isUninstall || (adminScreen && adminActivo)
         return when {
             isAccessibility && AppBlockManager.SYS_ACCESSIBILITY in blocked -> "accessibility"
             isVpn           && AppBlockManager.SYS_VPN           in blocked -> "vpn"
