@@ -97,6 +97,14 @@ class DnsVpnService : VpnService() {
                 .setSession("AdeoShield")
                 .addAddress("10.0.0.2", 32)
                 .addDnsServer("10.0.0.1")
+                // El fd que devuelve establish() es NO bloqueante por
+                // defecto: read() devolvia 0 sin datos y el bucle de abajo
+                // giraba en vacio (espera activa, ~1 nucleo al 100 % y el
+                // telefono sin poder dormir). Bloqueante, el hilo duerme en
+                // el kernel hasta que llega un paquete. La parada sigue
+                // funcionando: shutdown() pone running=false y cierra tunFd,
+                // lo que hace fallar el read() bloqueado y sale del bucle.
+                .setBlocking(true)
 
             INTERCEPT_IPS.forEach { builder.addRoute(it, 32) }
 
@@ -111,13 +119,18 @@ class DnsVpnService : VpnService() {
             val buffer = ByteArray(32_767)
 
             while (running.get()) {
-                val len = input.read(buffer)
-                if (len <= 0) continue
+                val len = input.read(buffer)  // bloquea hasta que llega un paquete
+                if (len < 0) break            // EOF: el tun se ha cerrado
+                if (len == 0) continue
                 val packet = buffer.copyOf(len)
                 executor.submit { handlePacket(packet, output) }
             }
         } catch (e: Exception) {
             if (running.get()) Log.e(TAG, "Tunnel error: ${e.javaClass.simpleName}: ${e.message}", e)
+        } finally {
+            // Traza de verificacion de la parada: con read() bloqueante,
+            // confirma que cerrar tunFd desbloquea el hilo y este termina.
+            Log.i(TAG, "startTunnel: bucle del tun terminado")
         }
     }
 
