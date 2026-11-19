@@ -70,7 +70,13 @@ class DnsVpnService : VpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) { stopSelf(); return START_NOT_STICKY }
-        startForeground(NOTIF_ID, buildNotification())
+        // startForeground() se llama ya, sin esperar al tunel (el sistema
+        // exige hacerlo a tiempo), con el estado que permite saber el
+        // permiso de VPN: sin permiso (p.ej. reinicio por START_STICKY tras
+        // una revocacion) no se afirma que filtra. startTunnel() corrige la
+        // notificacion segun establish() tenga exito o no.
+        val conPermiso = VpnService.prepare(this) == null
+        startForeground(NOTIF_ID, buildNotification(activa = conPermiso))
         if (!running.getAndSet(true)) executor.submit { startTunnel() }
         return START_STICKY
     }
@@ -112,8 +118,10 @@ class DnsVpnService : VpnService() {
             tunFd = builder.establish() ?: run {
                 Log.e(TAG, "establish() returned null — missing VPN permission?")
                 running.set(false)
+                actualizarNotificacion(activa = false)
                 return
             }
+            actualizarNotificacion(activa = true)
 
             val input  = FileInputStream(tunFd!!.fileDescriptor)
             val output = FileOutputStream(tunFd!!.fileDescriptor)
@@ -126,8 +134,16 @@ class DnsVpnService : VpnService() {
                 executor.submit { handlePacket(packet, output) }
             }
         } catch (e: Exception) {
-            if (running.get()) Log.e(TAG, "Tunnel error: ${e.javaClass.simpleName}: ${e.message}", e)
+            if (running.get()) {
+                Log.e(TAG, "Tunnel error: ${e.javaClass.simpleName}: ${e.message}", e)
+                actualizarNotificacion(activa = false)
+            }
         }
+    }
+
+    private fun actualizarNotificacion(activa: Boolean) {
+        getSystemService(NotificationManager::class.java)
+            .notify(NOTIF_ID, buildNotification(activa))
     }
 
     // ── Procesado de paquetes ─────────────────────────────────────────────────
