@@ -70,14 +70,29 @@ class DnsVpnService : VpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) { stopSelf(); return START_NOT_STICKY }
-        startForeground(NOTIF_ID, buildNotification())
+        // startForeground() se llama ya, sin esperar al tunel (el sistema
+        // exige hacerlo a tiempo), con el estado que permite saber el
+        // permiso de VPN: sin permiso (p.ej. reinicio por START_STICKY tras
+        // una revocacion) no se afirma que filtra. startTunnel() corrige la
+        // notificacion segun establish() tenga exito o no.
+        val conPermiso = VpnService.prepare(this) == null
+        startForeground(NOTIF_ID, buildNotification(activa = conPermiso))
         if (!running.getAndSet(true)) executor.submit { startTunnel() }
         return START_STICKY
     }
 
+    // Sin stopSelf() A PROPOSITO: el servicio sigue vivo tras la
+    // revocacion porque es el que ejecuta el sondeo de 60 s de
+    // AccessibilityWatchdog (fuente de verdad de "Accesibilidad
+    // desactivada"). Si se parase, solo quedaria el respaldo de
+    // WorkManager (15 min, poco fiable en Samsung) justo cuando la VPN ya
+    // no protege. Lo que si se hace es cambiar la notificacion, para no
+    // seguir afirmando que filtra cuando ya no hay tunel.
     override fun onRevoke() {
         Log.w(TAG, "onRevoke")
         shutdown()
+        getSystemService(NotificationManager::class.java)
+            .notify(NOTIF_ID, buildNotification(activa = false))
     }
 
     override fun onDestroy() {
@@ -111,8 +126,10 @@ class DnsVpnService : VpnService() {
             tunFd = builder.establish() ?: run {
                 Log.e(TAG, "establish() returned null — missing VPN permission?")
                 running.set(false)
+                actualizarNotificacion(activa = false)
                 return
             }
+            actualizarNotificacion(activa = true)
 
             val input  = FileInputStream(tunFd!!.fileDescriptor)
             val output = FileOutputStream(tunFd!!.fileDescriptor)
@@ -126,12 +143,20 @@ class DnsVpnService : VpnService() {
                 executor.submit { handlePacket(packet, output) }
             }
         } catch (e: Exception) {
-            if (running.get()) Log.e(TAG, "Tunnel error: ${e.javaClass.simpleName}: ${e.message}", e)
+            if (running.get()) {
+                Log.e(TAG, "Tunnel error: ${e.javaClass.simpleName}: ${e.message}", e)
+                actualizarNotificacion(activa = false)
+            }
         } finally {
             // Traza de verificacion de la parada: con read() bloqueante,
             // confirma que cerrar tunFd desbloquea el hilo y este termina.
             Log.i(TAG, "startTunnel: bucle del tun terminado")
         }
+    }
+
+    private fun actualizarNotificacion(activa: Boolean) {
+        getSystemService(NotificationManager::class.java)
+            .notify(NOTIF_ID, buildNotification(activa))
     }
 
     // ── Procesado de paquetes ─────────────────────────────────────────────────
@@ -214,7 +239,7 @@ class DnsVpnService : VpnService() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
     }
 
-    private fun buildNotification(): Notification {
+    private fun buildNotification(activa: Boolean = true): Notification {
         // Apunta a PinGateActivity, no a MainActivity: correccion adicional
         // de defensa en profundidad (la principal es el gate en
         // MainActivity.onResume() via GuardedActivity, que ya cubriria
@@ -227,8 +252,11 @@ class DnsVpnService : VpnService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         return Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("Protección DNS activa")
-            .setContentText("Filtrando contenido adulto vía AdGuard Family")
+            .setContentTitle(if (activa) "Protección DNS activa" else "Protección DNS desactivada")
+            .setContentText(
+                if (activa) "Filtrando contenido adulto vía AdGuard Family"
+                else "No se está filtrando. Abre AdeoShield para reactivar la protección."
+            )
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setContentIntent(pi)
             .setOngoing(true)
