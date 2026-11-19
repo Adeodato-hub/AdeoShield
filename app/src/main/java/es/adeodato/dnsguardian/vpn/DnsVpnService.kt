@@ -75,9 +75,18 @@ class DnsVpnService : VpnService() {
         return START_STICKY
     }
 
+    // Sin stopSelf() A PROPOSITO: el servicio sigue vivo tras la
+    // revocacion porque es el que ejecuta el sondeo de 60 s de
+    // AccessibilityWatchdog (fuente de verdad de "Accesibilidad
+    // desactivada"). Si se parase, solo quedaria el respaldo de
+    // WorkManager (15 min, poco fiable en Samsung) justo cuando la VPN ya
+    // no protege. Lo que si se hace es cambiar la notificacion, para no
+    // seguir afirmando que filtra cuando ya no hay tunel.
     override fun onRevoke() {
         Log.w(TAG, "onRevoke")
         shutdown()
+        getSystemService(NotificationManager::class.java)
+            .notify(NOTIF_ID, buildNotification(activa = false))
     }
 
     override fun onDestroy() {
@@ -201,7 +210,7 @@ class DnsVpnService : VpnService() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
     }
 
-    private fun buildNotification(): Notification {
+    private fun buildNotification(activa: Boolean = true): Notification {
         // Apunta a PinGateActivity, no a MainActivity: correccion adicional
         // de defensa en profundidad (la principal es el gate en
         // MainActivity.onResume() via GuardedActivity, que ya cubriria
@@ -214,8 +223,11 @@ class DnsVpnService : VpnService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         return Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("Protección DNS activa")
-            .setContentText("Filtrando contenido adulto vía AdGuard Family")
+            .setContentTitle(if (activa) "Protección DNS activa" else "Protección DNS desactivada")
+            .setContentText(
+                if (activa) "Filtrando contenido adulto vía AdGuard Family"
+                else "No se está filtrando. Abre AdeoShield para reactivar la protección."
+            )
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setContentIntent(pi)
             .setOngoing(true)
