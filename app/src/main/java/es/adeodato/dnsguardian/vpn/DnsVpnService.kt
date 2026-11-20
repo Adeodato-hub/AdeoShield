@@ -44,6 +44,20 @@ class DnsVpnService : VpnService() {
             "208.67.222.222", "208.67.220.220",
             "94.140.14.14",   "94.140.15.15"
         )
+
+        // Equivalentes IPv6 de los resolvedores publicos de INTERCEPT_IPS
+        // (Google, Cloudflare, Quad9, OpenDNS, AdGuard). Su trafico entra en
+        // el tun y se DESCARTA entero (handlePacket solo procesa IPv4): asi
+        // el DoH/DoT a ellos por IPv6 (p.ej. "DNS seguro" de Chrome con
+        // Google) no se salta el filtro, igual que en IPv4. El resto del
+        // IPv6 sale por la red fisica, fuera de la VPN.
+        val BLOCK_IPS_V6 = listOf(
+            "2001:4860:4860::8888", "2001:4860:4860::8844",
+            "2606:4700:4700::1111", "2606:4700:4700::1001",
+            "2620:fe::fe",          "2620:fe::9",
+            "2620:119:35::35",      "2620:119:53::53",
+            "2a10:50c0::ad1:ff",    "2a10:50c0::ad2:ff"
+        )
     }
 
     private var tunFd: ParcelFileDescriptor? = null
@@ -120,8 +134,15 @@ class DnsVpnService : VpnService() {
                 // funcionando: shutdown() pone running=false y cierra tunFd,
                 // lo que hace fallar el read() bloqueado y sale del bucle.
                 .setBlocking(true)
+                // Direccion IPv6 interna (ULA): sin ninguna direccion IPv6,
+                // Android instala "::/0 unreachable" en la VPN y corta TODO
+                // el IPv6 del telefono -- eso impedia conectar las llamadas
+                // de WhatsApp (ICE con candidatos IPv6). Con ella, solo las
+                // rutas IPv6 de abajo entran en el tun.
+                .addAddress("fd00::2", 128)
 
             INTERCEPT_IPS.forEach { builder.addRoute(it, 32) }
+            BLOCK_IPS_V6.forEach { builder.addRoute(it, 128) }
 
             tunFd = builder.establish() ?: run {
                 Log.e(TAG, "establish() returned null — missing VPN permission?")
@@ -165,7 +186,7 @@ class DnsVpnService : VpnService() {
         if (packet.size < 28) return
 
         val version = (packet[0].toInt() and 0xF0) shr 4
-        if (version != 4) return
+        if (version != 4) return  // IPv6: solo llega lo de BLOCK_IPS_V6, se descarta
 
         val ihl      = (packet[0].toInt() and 0x0F) * 4
         val protocol = packet[9].toInt() and 0xFF
